@@ -799,43 +799,40 @@ private val GLASS_PRESETS = listOf(
 
 @Composable
 private fun GlassPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> Unit) {
-    Column {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
-            item {
-                // The clock sunk in water (works with any of the glass looks).
-                val selected = clock.waterline != null
-                Box(
-                    Modifier
-                        .clip(CircleShape)
-                        .background(if (selected) Brand.Coral else TileColor)
-                        .clickable(role = Role.Switch) {
-                            onClockChange(clock.copy(waterline = if (selected) null else ClockSettings.DEFAULT_WATERLINE))
-                        }
-                        .semantics { this.selected = selected }
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
-                ) {
-                    Text("Water", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                }
-            }
-            items(GLASS_PRESETS) { preset ->
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The looks share the width, so they all fit on any phone.
+        Row(
+            Modifier
+                .padding(horizontal = 20.dp)
+                .fillMaxWidth()
+                .clip(CircleShape)
+                .background(TileColor),
+        ) {
+            GLASS_PRESETS.forEach { preset ->
                 val selected = abs(clock.opacity - preset.opacity) < 0.02f && abs(clock.fade - preset.fade) < 0.02f
                 Box(
                     Modifier
+                        .weight(1f)
                         .clip(CircleShape)
-                        .background(if (selected) Brand.Coral else TileColor)
+                        .background(if (selected) Brand.Coral else Color.Transparent)
                         .clickable(role = Role.RadioButton) { onClockChange(clock.copy(opacity = preset.opacity, fade = preset.fade)) }
                         .semantics { this.selected = selected }
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                        .padding(vertical = 9.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(preset.label, color = Color.White, style = MaterialTheme.typography.labelLarge)
+                    Text(preset.label, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
             }
         }
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        val waterline = clock.waterline
+        Row(
+            Modifier.padding(start = 20.dp, end = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             PanelSlider("Opacity", clock.opacity, ClockSettings.MIN_OPACITY..1f, Modifier.weight(1f)) {
                 onClockChange(clock.copy(opacity = it))
             }
-            val waterline = clock.waterline
             if (waterline != null) {
                 // Slider to the right = more of the clock under water.
                 PanelSlider(
@@ -845,7 +842,34 @@ private fun GlassPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> U
             } else {
                 PanelSlider("Fade", clock.fade, 0f..1f, Modifier.weight(1f)) { onClockChange(clock.copy(fade = it)) }
             }
+            WaterButton(on = waterline != null) {
+                onClockChange(clock.copy(waterline = if (waterline != null) null else ClockSettings.DEFAULT_WATERLINE))
+            }
         }
+    }
+}
+
+/** Sinks the clock in water, or brings it back up. */
+@Composable
+private fun WaterButton(on: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(role = Role.Switch, onClickLabel = if (on) "Take the clock out of the water" else "Put the clock under water", onClick = onClick)
+            .semantics { selected = on }
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (on) Brand.Coral else TileColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(AppIcons.Opacity, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        Text("Water", color = Color.White.copy(alpha = if (on) 1f else 0.7f), style = MaterialTheme.typography.labelSmall)
     }
 }
 

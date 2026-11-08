@@ -2,9 +2,13 @@ package com.sadikbr.videowallpaper.clock
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import kotlin.math.ceil
 import android.graphics.LinearGradient
 import android.graphics.LightingColorFilter
-import android.graphics.Path
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.math.floor
@@ -160,6 +164,9 @@ object ClockPainter {
             timeText, dateText, timePaint, datePaint, centerX, timeBaseline, dateBaseline, stretch,
             timeRect, timeBounds, dateBounds,
             waterline = clock.waterline?.coerceIn(ClockSettings.MIN_WATERLINE, ClockSettings.MAX_WATERLINE),
+            // Everything the underwater picture depends on (the time, the look and the geometry).
+            // (Not the position: the picture is placed relative to the time, so moving it is free.)
+            waterKey = listOf(timeText, clock.copy(position = 0f), width, height),
         )
     }
 }
@@ -180,19 +187,11 @@ class ClockLayout internal constructor(
     /** Everything the date draws, in screen pixels; null when the date is hidden. */
     val dateBounds: RectF?,
     private val waterline: Float? = null,
+    private val waterKey: Any? = null,
 ) {
-    /** The digits seen through water: tinted light blue, more see-through. */
-    private val underwaterPaint by lazy {
-        Paint(timePaint).apply {
-            alpha = (alpha * 0.55f).toInt()
-            colorFilter = LightingColorFilter(0xFFB8E2FF.toInt(), 0x00081420)
-        }
-    }
-
     /**
      * The big time, stretched upwards from its baseline. With depth it goes behind the subject.
-     * With a [waterline], the part under the water ripples sideways, sinks a little and fades,
-     * and the surface shimmers where it crosses the digits.
+     * With a [waterline], the part below it looks seen through water (see [UnderwaterDigits]).
      */
     fun drawTime(canvas: Canvas) {
         val line = waterline
@@ -200,64 +199,79 @@ class ClockLayout internal constructor(
             drawDigits(canvas, timePaint)
             return
         }
-        val height = timeRect.height()
-        val waterY = timeRect.top + height * line
+        val waterY = floor(timeRect.top + timeRect.height() * line)
 
         // Above the water: as normal.
         canvas.save()
-        canvas.clipRect(timeBounds.left, timeBounds.top - height, timeBounds.right, floor(waterY))
+        canvas.clipRect(timeBounds.left, timeBounds.top - timeRect.height(), timeBounds.right, waterY)
         drawDigits(canvas, timePaint)
         canvas.restore()
 
-        // Under the water: thin bands, each pushed sideways by a ripple (refraction), the whole
-        // lower part sunk a little.
+        // Under the water: a picture made once (per minute and look) and reused for every frame.
+        val underwater = UnderwaterDigits.get(waterKey ?: this) { renderUnderwater(waterY) } ?: return
+        canvas.drawBitmap(underwater.bitmap, timeRect.left + underwater.left, waterY, null)
+    }
+
+    /**
+     * The digits as seen under water: tinted towards blue, softly blurred, sunk a little (so they
+     * don't line up with the part above the surface, like refraction), rippling sideways, and
+     * fading away with depth.
+     */
+    private fun renderUnderwater(waterY: Float): UnderwaterDigits.Picture? {
+        val height = timeRect.height()
         val amplitude = timeRect.width() * 0.0045f
-        val wavelength = height * 0.3f
-        val sink = height * 0.02f
-        // Whole-pixel bands that meet exactly, so no seams show between them.
-        val band = (height / 240f).roundToInt().coerceAtLeast(1)
-        var y = floor(waterY)
-        val bottom = timeBounds.bottom + sink
-        while (y < bottom) {
-            val depth = ((y - waterY) / height).coerceIn(0f, 1f)
-            val phase = (y - waterY) / wavelength * 2f * PI.toFloat()
-            val dx = amplitude * (0.5f + depth) * (sin(phase) + 0.35f * sin(phase * 2.3f + 1f))
-            canvas.save()
-            canvas.clipRect(timeBounds.left, y, timeBounds.right, y + band)
-            canvas.translate(dx, sink)
-            drawDigits(canvas, underwaterPaint)
-            canvas.restore()
-            y += band
+        val sink = height * 0.025f
+        val pad = ceil(amplitude).toInt() + 2
+        val left = floor(timeBounds.left) - pad
+        val width = ceil(timeBounds.right - timeBounds.left).toInt() + 2 * pad
+        val rows = ceil(timeBounds.bottom + sink - waterY).toInt()
+        if (width <= 0 || rows <= 0) return null
+
+        val paint = Paint(timePaint).apply {
+            alpha = (alpha * 0.8f).toInt()
+            colorFilter = LightingColorFilter(0xFFA6D8FF.toInt(), 0x00061220)
+            maskFilter = BlurMaskFilter((height * 0.008f).coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
+        }
+        val flat = Bitmap.createBitmap(width, rows, Bitmap.Config.ARGB_8888)
+        Canvas(flat).apply {
+            translate(-left, -waterY + sink)
+            drawDigits(this, paint)
+            // Fade with depth: clear near the surface, nearly gone at the bottom of the digits.
+            translate(left, waterY - sink)
+            drawRect(
+                0f, 0f, width.toFloat(), rows.toFloat(),
+                Paint().apply {
+                    shader = LinearGradient(
+                        0f, 0f, 0f, rows.toFloat(),
+                        intArrayOf(0xD0000000.toInt(), 0x70000000, 0x18000000),
+                        floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+                    )
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                },
+            )
         }
 
-        // The surface: a soft glow and a thin bright wavy line across the digits.
-        val left = timeRect.left - timeRect.width() * 0.04f
-        val right = timeRect.right + timeRect.width() * 0.04f
-        val surface = Path()
-        val steps = 48
-        for (i in 0..steps) {
-            val x = left + (right - left) * i / steps
-            val wy = waterY + height * 0.012f * sin(i / steps.toFloat() * 7f * PI.toFloat())
-            if (i == 0) surface.moveTo(x, wy) else surface.lineTo(x, wy)
+        // Ripples: each row pushed sideways a little, more so deeper down.
+        val rippled = Bitmap.createBitmap(width, rows, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(rippled)
+        val rowPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+        val wavelength = height * 0.22f
+        val src = Rect()
+        val dst = RectF()
+        val step = 2
+        var y = 0
+        while (y < rows) {
+            val depth = (y / height).coerceIn(0f, 1f)
+            val phase = y / wavelength * 2f * PI.toFloat()
+            val dx = amplitude * (0.4f + depth) * (sin(phase) + 0.4f * sin(phase * 2.7f + 1.3f))
+            val bottom = minOf(y + step, rows)
+            src.set(0, y, width, bottom)
+            dst.set(dx, y.toFloat(), dx + width, bottom.toFloat())
+            canvas.drawBitmap(flat, src, dst, rowPaint)
+            y = bottom
         }
-        val fadeEnds = LinearGradient(
-            left, 0f, right, 0f,
-            intArrayOf(Color.TRANSPARENT, Color.WHITE, Color.WHITE, Color.TRANSPARENT),
-            floatArrayOf(0f, 0.15f, 0.85f, 1f), Shader.TileMode.CLAMP,
-        )
-        val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = height * 0.06f
-            strokeCap = Paint.Cap.ROUND
-            shader = fadeEnds
-            alpha = 40
-        }
-        canvas.drawPath(surface, glow)
-        val shine = Paint(glow).apply {
-            strokeWidth = (height * 0.008f).coerceAtLeast(1.5f)
-            alpha = 150
-        }
-        canvas.drawPath(surface, shine)
+        flat.recycle()
+        return UnderwaterDigits.Picture(rippled, left - timeRect.left)
     }
 
     private fun drawDigits(canvas: Canvas, paint: Paint) {
@@ -270,6 +284,26 @@ class ClockLayout internal constructor(
     /** The date line. It always stays in front, so it can be read. */
     fun drawDate(canvas: Canvas) {
         if (dateText != null) canvas.drawText(dateText, centerX, dateBaseline, datePaint)
+    }
+}
+
+/** The latest underwater clock pictures, shared by the wallpaper and the in-app previews. */
+private object UnderwaterDigits {
+    /** [left] is relative to the left of the time; the top is at the water surface. */
+    class Picture(val bitmap: Bitmap, val left: Float)
+
+    private const val SIZE = 4
+    private val cache = LinkedHashMap<Any, Picture?>()
+
+    @Synchronized
+    fun get(key: Any, create: () -> Picture?): Picture? {
+        cache.remove(key)?.let { cache[key] = it; return it }
+        val picture = create()
+        cache[key] = picture
+        // Older pictures may still be on screen in a preview being drawn, so they are not
+        // recycled; the garbage collector frees them.
+        while (cache.size > SIZE) cache.remove(cache.keys.first())
+        return picture
     }
 }
 
