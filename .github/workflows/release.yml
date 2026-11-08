@@ -1,17 +1,31 @@
 name: Release
 
+# Runs when a v* tag is pushed, or manually from the Actions tab with a version
+# (e.g. v1.0.0), in which case the tag is created on the selected commit.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release, e.g. v1.0.0'
+        required: true
 
 permissions:
   contents: write
+
+env:
+  TAG: ${{ inputs.version || github.ref_name }}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check version format
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must look like v1.2.3, got: $TAG"; exit 1; }
 
       - uses: actions/setup-java@v4
         with:
@@ -25,18 +39,20 @@ jobs:
 
       - name: Prepare APK and release notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          cp app/build/outputs/apk/release/app-release.apk "VideoSlideshow-${GITHUB_REF_NAME}.apk"
+          VERSION="${TAG#v}"
+          cp app/build/outputs/apk/release/app-release.apk "VideoSlideshow-${TAG}.apk"
           # Take this version's section from CHANGELOG.md (everything up to the next "## [").
           awk -v v="$VERSION" '
             $0 ~ "^## \\[" v "\\]" { found = 1; next }
             found && /^## \[/ { exit }
             found { print }
           ' CHANGELOG.md > release-notes.md
-          test -s release-notes.md || echo "Release ${GITHUB_REF_NAME}" > release-notes.md
+          test -s release-notes.md || echo "Release ${TAG}" > release-notes.md
 
       - uses: softprops/action-gh-release@v2
         with:
-          name: Video Slideshow ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Video Slideshow ${{ env.TAG }}
           body_path: release-notes.md
-          files: VideoSlideshow-${{ github.ref_name }}.apk
+          files: VideoSlideshow-${{ env.TAG }}.apk

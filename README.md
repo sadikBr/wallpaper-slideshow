@@ -70,4 +70,5 @@ The app keeps persistent read access to each chosen item (Storage Access Framewo
 
 1. Update `versionName` (and increase `versionCode`) in `app/build.gradle.kts`.
 2. Add a section for the version to `CHANGELOG.md`.
-3. Push a tag such as `v1.1.0`. The **Release** workflow builds the APK and publishes a GitHub release with it and the changelog section.
+3. Push a tag such as `v1.1.0`, or run the **Release** workflow from the Actions tab and enter the version.
+   It builds the APK and publishes a GitHub release (creating the tag if needed) with the APK and the changelog section.
