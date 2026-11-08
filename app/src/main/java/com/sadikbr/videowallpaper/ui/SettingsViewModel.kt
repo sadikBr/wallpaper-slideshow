@@ -15,6 +15,7 @@ import com.sadikbr.videowallpaper.data.BuiltInWallpapers
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaKind
+import com.sadikbr.videowallpaper.ui.studio.StudioResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -82,7 +83,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun removeItem(uri: String) {
         editMedia { current -> current - uri }
-        launch { repository.removeClockOffset(uri) }
+        launch {
+            repository.removeClockOffset(uri)
+            repository.setPhotoFraming(uri, null)
+        }
         DepthMasks.delete(getApplication(), uri)
         runCatching {
             getApplication<Application>().contentResolver.releasePersistableUriPermission(
@@ -108,6 +112,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setSpeed(value: Float) = launch { repository.setSpeed(value) }
     fun setTransition(value: TransitionStyle) = launch { repository.setTransition(value) }
     fun setTransitionMs(value: Int) = launch { repository.setTransitionMs(value) }
+
+    /** Saves what the wallpaper editor changed. */
+    fun applyStudio(result: StudioResult) = launch {
+        repository.updateClock { result.clock }
+        result.clockOffsets.forEach { (uri, offset) -> repository.setClockOffset(uri, offset) }
+        result.framings.forEach { (uri, framing) -> repository.setPhotoFraming(uri, framing) }
+    }
 
     fun updateClock(transform: (ClockSettings) -> ClockSettings) = launch { repository.updateClock(transform) }
     fun setClockOffset(uri: String, offset: Float?) = launch { repository.setClockOffset(uri, offset) }

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.sadikbr.videowallpaper.clock.ClockPainter
 import com.sadikbr.videowallpaper.clock.DepthPlacement
+import com.sadikbr.videowallpaper.clock.ClockFonts
 import com.sadikbr.videowallpaper.clock.DepthArrangement
 import com.sadikbr.videowallpaper.clock.Framing
 import com.sadikbr.videowallpaper.clock.arrangeDepth
@@ -30,19 +31,27 @@ import com.sadikbr.videowallpaper.clock.toRectF
 import com.sadikbr.videowallpaper.clock.toBox
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
+import com.sadikbr.videowallpaper.data.PhotoFraming
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.FilterQuality
 import com.sadikbr.videowallpaper.data.ScaleMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+/** Where the preview drew things, in its own pixels; used by the editor for touch handling. */
+data class PreviewGeometry(val time: RectF, val date: RectF?, val photo: RectF?, val size: Size)
+
 /**
- * A small picture of what the wallpaper shows: the photo, the time, the photo's subject in
- * front of the time (when allowed) and the date. Uses the same arrangement rules as the
- * wallpaper, including reframing the photo to bring its subject up to the clock.
+ * A picture of what the wallpaper shows: the photo, the time, the photo's subject in front of
+ * the time (when allowed) and the date. Uses the same arrangement rules and drawing code as
+ * the wallpaper, including reframing the photo to bring its subject up to the clock.
  *
  * @param mask alpha-only cut-out of the photo's subject.
  * @param manualOffset the photo's own clock position, or null to arrange it automatically.
+ * @param manualFraming the photo's own zoom and position, or null for automatic.
+ * @param onGeometry receives where the clock and photo were drawn.
  */
 @Composable
 fun DepthPreview(
@@ -53,9 +62,13 @@ fun DepthPreview(
     manualOffset: Float?,
     scaleMode: ScaleMode,
     modifier: Modifier = Modifier,
+    manualFraming: PhotoFraming? = null,
+    onGeometry: ((PreviewGeometry) -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     val photoImage = remember(photo) { photo?.asImageBitmap() }
     val maskImage = remember(mask) { mask?.asImageBitmap() }
+    val typeface = remember(clock.font) { ClockFonts.typeface(context, clock.font) }
     val minute by rememberCurrentMinute()
 
     Canvas(modifier) {
@@ -66,25 +79,30 @@ fun DepthPreview(
         clipRect {
             val fitted = photo?.let { fitRect(it.width, it.height, width, height, scaleMode == ScaleMode.CROP) }
             val subjectAt = mask?.let { m -> { u: Float, v: Float -> alphaAt(m, u, v) } }
-            val arrangement = if (clock.enabled && fitted != null) {
-                arrangeDepth(
-                    clock, use24Hour, width.toInt(), height.toInt(), fitted,
+            val framing = manualFraming?.let { Framing(it.zoom, it.shift * height, it.shiftX * width) }
+            val arrangement = when {
+                clock.enabled && fitted != null -> arrangeDepth(
+                    clock, use24Hour, typeface, width.toInt(), height.toInt(), fitted,
                     cropped = scaleMode == ScaleMode.CROP,
                     manualOffset = manualOffset,
+                    manualFraming = framing,
                     subjectAt = subjectAt,
                 )
-            } else {
-                DepthArrangement(Framing.NONE, manualOffset ?: 0f)
+                framing != null -> DepthArrangement(framing, manualOffset ?: 0f)
+                else -> DepthArrangement(Framing.NONE, manualOffset ?: 0f)
             }
-            val target = fitted?.toBox()?.framed(arrangement.framing.zoom, arrangement.framing.shiftY)?.toRectF()
+            val target = fitted?.toBox()?.framed(arrangement.framing.zoom, arrangement.framing.shiftY, arrangement.framing.shiftX)?.toRectF()
             val dstOffset = target?.let { IntOffset(it.left.roundToInt(), it.top.roundToInt()) }
             val dstSize = target?.let { IntSize(it.width().roundToInt(), it.height().roundToInt()) }
             if (photoImage != null && dstOffset != null && dstSize != null) {
-                drawImage(photoImage, dstOffset = dstOffset, dstSize = dstSize)
+                drawImage(photoImage, dstOffset = dstOffset, dstSize = dstSize, filterQuality = FilterQuality.High)
             }
-            if (!clock.enabled) return@clipRect
+            if (!clock.enabled) {
+                onGeometry?.invoke(PreviewGeometry(RectF(), null, target, size))
+                return@clipRect
+            }
 
-            val layout = ClockPainter.layout(clock, use24Hour, width.toInt(), height.toInt(), arrangement.clockOffset)
+            val layout = ClockPainter.layout(clock, use24Hour, typeface, width.toInt(), height.toInt(), arrangement.clockOffset)
             drawIntoCanvas { layout.drawTime(it.nativeCanvas) }
 
             val depth = photoImage != null && maskImage != null && subjectAt != null && target != null &&
@@ -93,7 +111,7 @@ fun DepthPreview(
                 // The subject in front of the time: the photo, kept only where the cut-out is opaque.
                 drawIntoCanvas { canvas ->
                     canvas.saveLayer(Rect(0f, 0f, width, height), Paint())
-                    drawImage(photoImage!!, dstOffset = dstOffset!!, dstSize = dstSize!!)
+                    drawImage(photoImage!!, dstOffset = dstOffset!!, dstSize = dstSize!!, filterQuality = FilterQuality.High)
                     drawImage(
                         maskImage!!,
                         srcSize = IntSize(maskImage.width, maskImage.height),
@@ -105,6 +123,7 @@ fun DepthPreview(
                 }
             }
             drawIntoCanvas { layout.drawDate(it.nativeCanvas) }
+            onGeometry?.invoke(PreviewGeometry(layout.timeRect, layout.dateBounds, target, size))
         }
     }
 }

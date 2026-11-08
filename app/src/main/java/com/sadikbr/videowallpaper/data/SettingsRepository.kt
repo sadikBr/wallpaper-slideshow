@@ -42,6 +42,7 @@ class SettingsRepository(context: Context) {
                 transitionMs = prefs[Keys.TRANSITION_MS] ?: WallpaperSettings.DEFAULT_TRANSITION_MS,
                 clock = readClock(prefs),
                 clockOffsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]),
+                photoFramings = decodeFramings(prefs[Keys.PHOTO_FRAMINGS]),
             )
         }
         .distinctUntilChanged()
@@ -72,8 +73,11 @@ class SettingsRepository(context: Context) {
         val updated = transform(readClock(prefs))
         prefs[Keys.CLOCK_ENABLED] = updated.enabled
         prefs[Keys.CLOCK_COLOR] = updated.color
-        prefs[Keys.CLOCK_SIZE] = updated.size.name
-        prefs[Keys.CLOCK_WEIGHT] = updated.weight.name
+        prefs[Keys.CLOCK_WEIGHT] = updated.font.name
+        prefs[Keys.CLOCK_WIDTH] = updated.width
+        prefs[Keys.CLOCK_STRETCH] = updated.stretch
+        prefs[Keys.CLOCK_OPACITY] = updated.opacity
+        prefs[Keys.CLOCK_FADE] = updated.fade
         prefs[Keys.CLOCK_FORMAT] = updated.timeFormat.name
         prefs[Keys.CLOCK_SHOW_DATE] = updated.showDate
         prefs[Keys.CLOCK_POSITION] = updated.position
@@ -89,11 +93,38 @@ class SettingsRepository(context: Context) {
 
     suspend fun removeClockOffset(uri: String) = setClockOffset(uri, null)
 
+    /** Sets how one photo is zoomed and moved, or with null goes back to automatic framing. */
+    suspend fun setPhotoFraming(uri: String, framing: PhotoFraming?) = dataStore.edit { prefs ->
+        val framings = decodeFramings(prefs[Keys.PHOTO_FRAMINGS]).toMutableMap()
+        if (framing == null) framings.remove(uri) else framings[uri] = framing
+        prefs[Keys.PHOTO_FRAMINGS] = framings.entries.joinToString(SEPARATOR) { (key, value) ->
+            "$key\t${value.zoom},${value.shift},${value.shiftX}"
+        }
+    }
+
+    private fun decodeFramings(encoded: String?): Map<String, PhotoFraming> = encoded.orEmpty()
+        .split(SEPARATOR)
+        .mapNotNull { line ->
+            val tab = line.lastIndexOf('\t')
+            if (tab <= 0) return@mapNotNull null
+            val parts = line.substring(tab + 1).split(',')
+            val zoom = parts.getOrNull(0)?.toFloatOrNull() ?: return@mapNotNull null
+            val shift = parts.getOrNull(1)?.toFloatOrNull() ?: return@mapNotNull null
+            val shiftX = parts.getOrNull(2)?.toFloatOrNull() ?: 0f
+            line.substring(0, tab) to PhotoFraming(zoom, shift, shiftX)
+        }
+        .toMap()
+
     private fun readClock(prefs: Preferences) = ClockSettings(
         enabled = prefs[Keys.CLOCK_ENABLED] ?: false,
         color = prefs[Keys.CLOCK_COLOR] ?: ClockSettings.COLORS.first(),
-        size = enumOrDefault(prefs[Keys.CLOCK_SIZE], ClockSize.LARGE),
-        weight = enumOrDefault(prefs[Keys.CLOCK_WEIGHT], ClockWeight.TALL),
+        font = enumOrDefault(prefs[Keys.CLOCK_WEIGHT], ClockSettings().font),
+        width = prefs[Keys.CLOCK_WIDTH]
+            ?: prefs[Keys.CLOCK_SIZE]?.let { ClockSettings.LEGACY_SIZES[it] }
+            ?: ClockSettings.DEFAULT_WIDTH,
+        stretch = prefs[Keys.CLOCK_STRETCH] ?: if (prefs[Keys.CLOCK_WEIGHT] != null) 1f else ClockSettings().stretch,
+        opacity = prefs[Keys.CLOCK_OPACITY] ?: if (prefs[Keys.CLOCK_WEIGHT] != null) 1f else ClockSettings().opacity,
+        fade = prefs[Keys.CLOCK_FADE] ?: 0f,
         timeFormat = enumOrDefault(prefs[Keys.CLOCK_FORMAT], TimeFormat.SYSTEM),
         showDate = prefs[Keys.CLOCK_SHOW_DATE] ?: true,
         position = prefs[Keys.CLOCK_POSITION] ?: ClockSettings.DEFAULT_POSITION,
@@ -134,6 +165,11 @@ class SettingsRepository(context: Context) {
         val CLOCK_POSITION = floatPreferencesKey("clock_position")
         val CLOCK_OFFSETS = stringPreferencesKey("clock_offsets")
         val CLOCK_AUTO_PLACE = booleanPreferencesKey("clock_auto_place")
+        val CLOCK_WIDTH = floatPreferencesKey("clock_width")
+        val CLOCK_STRETCH = floatPreferencesKey("clock_stretch")
+        val CLOCK_OPACITY = floatPreferencesKey("clock_opacity")
+        val CLOCK_FADE = floatPreferencesKey("clock_fade")
+        val PHOTO_FRAMINGS = stringPreferencesKey("photo_framings")
     }
 
     private companion object {

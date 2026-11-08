@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
@@ -64,8 +65,8 @@ fun MediaTile(
     onRemove: () -> Unit,
     /** Cut-out progress, shown when the depth clock is on (null hides it). */
     depthState: DepthMasks.State?,
-    /** Opens the per-photo clock position editor; null when not applicable. */
-    onAdjustClock: (() -> Unit)?,
+    /** Opens the wallpaper editor for this item. */
+    onEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val info by rememberMediaInfo(uri, loader)
@@ -210,13 +211,11 @@ fun MediaTile(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
-            if (onAdjustClock != null && info?.kind == MediaKind.IMAGE) {
-                DropdownMenuItem(
-                    text = { Text("Adjust clock") },
-                    leadingIcon = { Icon(AppIcons.Schedule, contentDescription = null) },
-                    onClick = { menuOpen = false; onAdjustClock() },
-                )
-            }
+            DropdownMenuItem(
+                text = { Text("Edit wallpaper") },
+                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                onClick = { menuOpen = false; onEdit() },
+            )
             DropdownMenuItem(
                 text = { Text("Play earlier") },
                 leadingIcon = { Icon(Icons.Default.KeyboardArrowLeft, contentDescription = null) },

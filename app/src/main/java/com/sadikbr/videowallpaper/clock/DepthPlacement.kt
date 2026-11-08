@@ -11,16 +11,19 @@ data class Box(val left: Float, val top: Float, val right: Float, val bottom: Fl
     val isEmpty get() = width <= 0f || height <= 0f
     fun shiftedBy(dy: Float) = Box(left, top + dy, right, bottom + dy)
 
-    /** This box zoomed by [zoom] around its centre, then moved down by [shiftY]. */
-    fun framed(zoom: Float, shiftY: Float): Box {
+    /** This box zoomed by [zoom] around its centre, then moved by [shiftX] (right) and [shiftY] (down). */
+    fun framed(zoom: Float, shiftY: Float, shiftX: Float = 0f): Box {
         val halfWidth = width * zoom / 2f
         val halfHeight = height * zoom / 2f
-        return Box(centerX - halfWidth, centerY + shiftY - halfHeight, centerX + halfWidth, centerY + shiftY + halfHeight)
+        return Box(
+            centerX + shiftX - halfWidth, centerY + shiftY - halfHeight,
+            centerX + shiftX + halfWidth, centerY + shiftY + halfHeight,
+        )
     }
 }
 
-/** How a photo is reframed for the depth effect: zoomed around its centre, then moved down by [shiftY] pixels. */
-data class Framing(val zoom: Float, val shiftY: Float) {
+/** How a photo is reframed: zoomed around its centre, then moved by [shiftX] / [shiftY] pixels. */
+data class Framing(val zoom: Float, val shiftY: Float, val shiftX: Float = 0f) {
     companion object {
         val NONE = Framing(1f, 0f)
     }

@@ -48,6 +48,29 @@ class MediaInfoLoader(context: Context) {
         info
     }
 
+    /**
+     * A sharper picture of [uri] for the editor's full-size preview (a frame for videos),
+     * at most [maxSide] pixels on its longest side. Not cached.
+     */
+    suspend fun loadLarge(uri: String, maxSide: Int = 1440): Bitmap? = withContext(Dispatchers.IO) {
+        val parsed = Uri.parse(uri)
+        runCatching {
+            when (MediaKind.of(appContext, parsed)) {
+                MediaKind.IMAGE -> loadImage(parsed, maxSide)
+                MediaKind.VIDEO -> {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(appContext, parsed)
+                        retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            ?.let { scaleDown(it, maxSide) }
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+
     private fun loadVideoInfo(uri: Uri, name: String?): MediaInfo {
         val retriever = MediaMetadataRetriever()
         try {
@@ -62,7 +85,9 @@ class MediaInfoLoader(context: Context) {
         }
     }
 
-    private fun loadImageThumbnail(uri: Uri): Bitmap {
+    private fun loadImageThumbnail(uri: Uri): Bitmap = loadImage(uri, THUMBNAIL_SIZE)
+
+    private fun loadImage(uri: Uri, maxSide: Int): Bitmap {
         val resolver = appContext.contentResolver
         // Read only the size first, so a 50-megapixel photo isn't fully decoded for a thumbnail.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -70,7 +95,7 @@ class MediaInfoLoader(context: Context) {
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Not a readable image" }
 
         var sampleSize = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= THUMBNAIL_SIZE) sampleSize *= 2
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= maxSide) sampleSize *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val bitmap = resolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, options) }
             ?: error("Not a readable image")
@@ -86,7 +111,7 @@ class MediaInfoLoader(context: Context) {
                 Matrix().apply { postRotate(rotation.toFloat()) }, true,
             )
         }
-        return scaleDown(upright)
+        return scaleDown(upright, maxSide)
     }
 
     private fun queryDisplayName(uri: Uri): String? = runCatching {
@@ -95,10 +120,10 @@ class MediaInfoLoader(context: Context) {
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
     }.getOrNull()
 
-    private fun scaleDown(frame: Bitmap): Bitmap {
+    private fun scaleDown(frame: Bitmap, maxSide: Int = THUMBNAIL_SIZE): Bitmap {
         val largest = maxOf(frame.width, frame.height)
-        if (largest <= THUMBNAIL_SIZE) return frame
-        val ratio = THUMBNAIL_SIZE.toFloat() / largest
+        if (largest <= maxSide) return frame
+        val ratio = maxSide.toFloat() / largest
         val scaled = Bitmap.createScaledBitmap(
             frame,
             (frame.width * ratio).toInt().coerceAtLeast(1),

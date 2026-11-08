@@ -6,6 +6,10 @@
 - **New name: Wallpaper Slideshow** (previously Video Slideshow), with a new look: a new app icon with a themed (single-colour) version for Android 13+, a matching colour palette across the app, a gradient header card, and a branded launch screen. Updating keeps your settings and your current wallpaper.
 
 ### Added
+- **Wallpaper editor**: a full-screen live preview you edit by hand. Drag the clock to move it, pinch it to resize, pull the handle under it to stretch the digits taller, and pinch or drag the photo to frame it (double-tap resets). A bottom tray has live font samples, colours (including one matched to the photo), glass effects (Solid, Glass, Frost, Ghost, Mist, plus opacity and fade) and clock options.
+- **Clock fonts** for tall, iOS-style clocks: Antonio, Antonio Bold, Oswald, Bebas and Big Shoulders (SIL Open Font License), alongside the system fonts. The clock is sized by width and can be stretched.
+- **Gallery** of seven built-in wallpapers made for the depth clock: Violet Peaks, Northern Lights, Golden Palm, Blue Hour (with exact subject cut-outs), Silk, Prism and the animated Prism Flow.
+- **Automatic depth framing**: like iOS, a photo is zoomed and moved so its subject reaches into the clock, which stays near the top. Only the time goes behind the subject; the date stays in front.
 - **Depth clock**: the wallpaper can draw its own large clock, and in photos with a clear subject (people, pets, buildings, objects) the subject stands in front of the time, like iOS depth-effect wallpapers.
   - Subjects are found on the phone with Google's ML Kit (no upload); each photo is analysed once and the result is saved.
   - Like iOS, the effect is skipped for a photo when the subject would hide too much of the time.

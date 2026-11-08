@@ -44,7 +44,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sadikbr.videowallpaper.ui.components.EmptyMediaCard
-import com.sadikbr.videowallpaper.ui.components.AdjustClockDialog
+import com.sadikbr.videowallpaper.ui.studio.WallpaperStudio
 import com.sadikbr.videowallpaper.ui.components.ClockCard
 import com.sadikbr.videowallpaper.ui.components.GalleryRow
 import com.sadikbr.videowallpaper.data.DepthMasks
@@ -72,7 +72,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     }
 
     val depthStates by viewModel.depthStates.collectAsStateWithLifecycle()
-    var adjustingClockFor by remember { mutableStateOf<String?>(null) }
+    /** The item the editor is open for ("" = no particular one), or null when closed. */
+    var studioFor by remember { mutableStateOf<String?>(null) }
 
     val pickMedia = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -109,17 +110,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             TimeFormat.H24 -> true
         }
 
-        adjustingClockFor?.let { uri ->
-            AdjustClockDialog(
-                uri = uri,
+        studioFor?.let { start ->
+            WallpaperStudio(
+                settings = current,
+                startUri = start.ifEmpty { null },
                 loader = viewModel.mediaInfoLoader,
-                clock = current.clock,
-                use24Hour = use24Hour,
-                scaleMode = current.scaleMode,
-                depthState = depthStates[uri],
-                savedOffset = current.clockOffsets[uri],
-                onSave = { viewModel.setClockOffset(uri, it) },
-                onDismiss = { adjustingClockFor = null },
+                depthStates = depthStates,
+                systemUses24Hour = viewModel.systemUses24Hour(),
+                onDone = { result ->
+                    viewModel.applyStudio(result)
+                    studioFor = null
+                },
+                onDismiss = { studioFor = null },
             )
         }
 
@@ -181,7 +183,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     onMoveLater = { viewModel.moveItem(index, index + 1) },
                     onRemove = { viewModel.removeItem(uri) },
                     depthState = if (current.clock.enabled) depthStates[uri] else null,
-                    onAdjustClock = if (current.clock.enabled) ({ adjustingClockFor = uri }) else null,
+                    onEdit = { studioFor = uri },
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -213,6 +215,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     clock = current.clock,
                     depthSummary = depthSummary(current.media, viewModel.mediaInfoLoader, depthStates),
                     onUpdate = viewModel::updateClock,
+                    onCustomize = { studioFor = current.media.firstOrNull() ?: "" },
                 )
             }
         }

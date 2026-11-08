@@ -19,7 +19,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -42,12 +44,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.sadikbr.videowallpaper.data.ClockSettings
-import com.sadikbr.videowallpaper.data.ClockSize
-import com.sadikbr.videowallpaper.data.ClockWeight
 import com.sadikbr.videowallpaper.data.TimeFormat
 import com.sadikbr.videowallpaper.ui.theme.AppIcons
-
-private val COLOR_NAMES = listOf("White", "Ice blue", "Warm yellow", "Pink", "Mint", "Black")
 
 /**
  * Settings for the wallpaper's own clock and the depth effect.
@@ -60,6 +58,7 @@ fun ClockCard(
     clock: ClockSettings,
     depthSummary: String?,
     onUpdate: ((ClockSettings) -> ClockSettings) -> Unit,
+    onCustomize: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -81,34 +80,22 @@ fun ClockCard(
             if (!clock.enabled) return@Column
 
             ItemDivider()
-            OptionGroup("Colour") {
-                ClockSettings.COLORS.forEachIndexed { index, color ->
-                    ColorSwatch(
-                        color = Color(color),
-                        name = COLOR_NAMES.getOrElse(index) { "Colour ${index + 1}" },
-                        selected = clock.color == color,
-                        onClick = { onUpdate { it.copy(color = color) } },
-                    )
-                }
+            Button(
+                onClick = onCustomize,
+                modifier = Modifier
+                    .padding(start = 72.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
+                    .fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Customize clock & photos")
             }
-            OptionGroup("Size") {
-                ClockSize.entries.forEach { size ->
-                    FilterChip(
-                        selected = clock.size == size,
-                        onClick = { onUpdate { it.copy(size = size) } },
-                        label = { Text(size.label) },
-                    )
-                }
-            }
-            OptionGroup("Style") {
-                ClockWeight.entries.forEach { weight ->
-                    FilterChip(
-                        selected = clock.weight == weight,
-                        onClick = { onUpdate { it.copy(weight = weight) } },
-                        label = { Text(weight.label) },
-                    )
-                }
-            }
+            Text(
+                "Drag, pinch and stretch the clock right on your wallpaper; pick fonts and glass effects.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 72.dp, end = 16.dp, bottom = 4.dp),
+            )
             OptionGroup("Time format") {
                 TimeFormat.entries.forEach { format ->
                     FilterChip(
@@ -146,11 +133,6 @@ fun ClockCard(
                 Switch(checked = clock.autoPlace, onCheckedChange = { on -> onUpdate { it.copy(autoPlace = on) } })
             }
 
-            PositionSlider(
-                position = clock.position,
-                onPositionChange = { position -> onUpdate { it.copy(position = position) } },
-            )
-
             Row(
                 Modifier
                     .padding(start = 72.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
@@ -166,8 +148,7 @@ fun ClockCard(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "Your phone's own lock-screen clock is still shown on top. To avoid two clocks, " +
-                        "hide or shrink it (Samsung: Good Lock › LockStar). Use \"Adjust clock\" on a photo " +
-                        "to move the clock for that photo only.",
+                        "hide or shrink it (Samsung: Good Lock › LockStar).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
@@ -187,55 +168,6 @@ private fun OptionGroup(label: String, content: @Composable () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             content()
-        }
-    }
-}
-
-@Composable
-private fun ColorSwatch(color: Color, name: String, selected: Boolean, onClick: () -> Unit) {
-    val ring = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    Box(
-        Modifier
-            .size(40.dp)
-            .border(if (selected) 3.dp else 1.dp, ring, CircleShape)
-            .padding(5.dp)
-            .background(color, CircleShape)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .semantics { contentDescription = name },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (selected) {
-            Icon(
-                Icons.Default.Check,
-                contentDescription = null,
-                tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
-/** Vertical position of the clock; saved when the finger is lifted. */
-@Composable
-private fun PositionSlider(position: Float, onPositionChange: (Float) -> Unit) {
-    var value by remember(position) { mutableFloatStateOf(position) }
-    Column(Modifier.padding(start = 72.dp, end = 16.dp, top = 8.dp)) {
-        Text("Default position", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            "Used for videos, and for photos where automatic placement doesn't apply",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Slider(
-            value = value,
-            onValueChange = { value = it },
-            onValueChangeFinished = { onPositionChange(value) },
-            valueRange = ClockSettings.MIN_POSITION..ClockSettings.MAX_POSITION,
-        )
-        Row(Modifier.fillMaxWidth()) {
-            Text("Higher", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text("Lower", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.concurrent.Executors
 import android.text.format.DateFormat
+import com.sadikbr.videowallpaper.clock.ClockFonts
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.TimeFormat
 import kotlin.math.roundToInt
@@ -177,7 +178,7 @@ class VideoWallpaperService : WallpaperService() {
             activeRenderer.setTransition(current.transition, current.transitionMs)
             activeRenderer.setClock(clockStyle(current))
             currentUri?.let { uri ->
-                if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentClockOffset(current.clockOffsets[uri])
+                if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentPlacement(current.clockOffsets[uri], current.photoFramings[uri])
             }
             if (current.clock.enabled) {
                 // Cut-outs are made once per photo; ones already done are skipped.
@@ -274,7 +275,7 @@ class VideoWallpaperService : WallpaperService() {
                 TimeFormat.H12 -> false
                 TimeFormat.H24 -> true
             }
-            return ClockStyle(clock, use24Hour)
+            return ClockStyle(clock, use24Hour, ClockFonts.typeface(this@VideoWallpaperService, clock.font))
         }
 
         /** Loads the cut-out of [uri] if the depth clock is on (call off the main thread). */
@@ -343,9 +344,10 @@ class VideoWallpaperService : WallpaperService() {
                 currentUri = uri
                 val isImage = kinds[uri] == MediaKind.IMAGE
                 val clockOffset = settings?.clockOffsets?.get(uri)
+                val framing = settings?.photoFramings?.get(uri)
                 // Queued in order: the renderer pairs each photo hand-over with the next decoded photo.
                 scope.launch(activationDispatcher) {
-                    if (isImage) target.activateImage(maskFor(uri), clockOffset) else target.activateVideo()
+                    if (isImage) target.activateImage(maskFor(uri), clockOffset, framing) else target.activateVideo()
                 }
             }
 

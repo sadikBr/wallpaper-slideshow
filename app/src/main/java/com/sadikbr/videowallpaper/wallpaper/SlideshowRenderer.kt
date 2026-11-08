@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.graphics.SurfaceTexture
 import android.opengl.EGL14
 import android.opengl.EGLConfig
@@ -25,7 +26,9 @@ import com.sadikbr.videowallpaper.clock.DepthPlacement
 import com.sadikbr.videowallpaper.clock.DepthArrangement
 import com.sadikbr.videowallpaper.clock.arrangeDepth
 import com.sadikbr.videowallpaper.clock.toBox
+import com.sadikbr.videowallpaper.clock.Framing
 import com.sadikbr.videowallpaper.data.ClockSettings
+import com.sadikbr.videowallpaper.data.PhotoFraming
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TransitionStyle
 import java.nio.ByteBuffer
@@ -36,7 +39,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /** The wallpaper clock's look, with the 12/24-hour choice already resolved. */
-internal data class ClockStyle(val settings: ClockSettings, val use24Hour: Boolean)
+internal data class ClockStyle(val settings: ClockSettings, val use24Hour: Boolean, val typeface: Typeface)
 
 /**
  * Draws the slideshow onto the wallpaper surface with OpenGL ES on its own thread.
@@ -138,6 +141,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     /** The user's own clock position for the photo on screen, or null to arrange it automatically. */
     private var imageClockOffset: Float? = null
 
+    /** The user's own framing of the photo on screen, or null for automatic. */
+    private var imageFraming: PhotoFraming? = null
+    private var nextImageFraming: PhotoFraming? = null
+
 
 
     /** Cut-out and clock offset for the photo that becomes current next. */
@@ -177,10 +184,11 @@ internal class SlideshowRenderer(windowSurface: Surface) {
      * @param clockOffset the photo's clock position adjustment, or null to place the clock
      *   automatically so the subject overlaps it.
      */
-    fun activateImage(mask: Bitmap?, clockOffset: Float?) = post {
+    fun activateImage(mask: Bitmap?, clockOffset: Float?, framing: PhotoFraming?) = post {
         active = Content.IMAGE
         nextImageMask = mask
         nextImageClockOffset = clockOffset
+        nextImageFraming = framing
         val next = pendingImages.removeFirstOrNull()
         if (next != null) {
             displayImage(next)
@@ -237,9 +245,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     /** The clock position adjustment of the photo on screen changed. */
-    fun setCurrentClockOffset(offset: Float?) = post {
-        if (content == Content.IMAGE && imageClockOffset != offset) {
+    fun setCurrentPlacement(offset: Float?, framing: PhotoFraming?) = post {
+        if (content == Content.IMAGE && (imageClockOffset != offset || imageFraming != framing)) {
             imageClockOffset = offset
+            imageFraming = framing
             drawUnlessAnimating()
         }
     }
@@ -321,6 +330,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         beginTransition()
         uploadMask(nextImageMask)
         imageClockOffset = nextImageClockOffset
+        imageFraming = nextImageFraming
+        nextImageFraming = null
         nextImageMask = null
         nextImageClockOffset = 0f
         val upload = fitToTextureLimit(bitmap)
@@ -451,25 +462,27 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
         val hasContent = content != Content.EMPTY && contentWidth > 0 && contentHeight > 0
         val style = clockStyle
-        val arrangement = if (style != null) arrangement(style, viewWidth, viewHeight) else DepthArrangement.NONE
+        val arrangement = arrangement(style, viewWidth, viewHeight)
 
         // Where the content goes, in normalised device coordinates (scaled, then reframed).
         var halfWidth = 1f
         var halfHeight = 1f
         var centerY = 0f
+        var centerX = offsetX
         if (hasContent) {
             val (fittedWidth, fittedHeight) = fittedHalfSize(contentWidth, contentHeight, viewWidth, viewHeight)
             halfWidth = fittedWidth * arrangement.framing.zoom
             halfHeight = fittedHeight * arrangement.framing.zoom
             centerY = -2f * arrangement.framing.shiftY / viewHeight
+            centerX = offsetX + 2f * arrangement.framing.shiftX / viewWidth
             val isVideo = content == Content.VIDEO
             drawQuad(
                 program = if (isVideo) videoProgram else imageProgram,
                 textureTarget = if (isVideo) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D,
                 texture = if (isVideo) videoTexture else imageTexture,
                 texMatrix = if (isVideo) videoMatrix else FLIP_VERTICAL,
-                left = offsetX - halfWidth,
-                right = offsetX + halfWidth,
+                left = centerX - halfWidth,
+                right = centerX + halfWidth,
                 bottom = centerY - halfHeight,
                 top = centerY + halfHeight,
                 alpha = alpha,
@@ -481,10 +494,11 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         drawClockPart(timeTexture, layout.timeBounds, viewWidth, viewHeight, alpha, offsetX)
 
         if (hasContent && content == Content.IMAGE) {
+            val photoCenterX = centerX - offsetX
             val photoRect = RectF(
-                viewWidth / 2f * (1f - halfWidth),
+                viewWidth / 2f * (1f + photoCenterX - halfWidth),
                 viewHeight / 2f * (1f - centerY - halfHeight),
-                viewWidth / 2f * (1f + halfWidth),
+                viewWidth / 2f * (1f + photoCenterX + halfWidth),
                 viewHeight / 2f * (1f - centerY + halfHeight),
             )
             if (isDepthAllowed(layout, photoRect)) {
@@ -494,8 +508,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
                     textureTarget = GLES20.GL_TEXTURE_2D,
                     texture = imageTexture,
                     texMatrix = FLIP_VERTICAL,
-                    left = offsetX - halfWidth,
-                    right = offsetX + halfWidth,
+                    left = centerX - halfWidth,
+                    right = centerX + halfWidth,
                     bottom = centerY - halfHeight,
                     top = centerY + halfHeight,
                     alpha = alpha,
@@ -530,7 +544,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         val key = listOf(style, offset, minute, viewWidth, viewHeight)
         clockLayout?.let { if (key == clockKey) return it }
 
-        val layout = ClockPainter.layout(style.settings, style.use24Hour, viewWidth, viewHeight, offset)
+        val layout = ClockPainter.layout(style.settings, style.use24Hour, style.typeface, viewWidth, viewHeight, offset)
         renderToTexture(timeTexture, layout.timeBounds) { layout.drawTime(it) }
         layout.dateBounds?.let { bounds -> renderToTexture(dateTexture, bounds) { layout.drawDate(it) } }
         clockLayout = layout
@@ -560,10 +574,15 @@ internal class SlideshowRenderer(windowSurface: Surface) {
      * How the photo on screen and the clock are arranged for the depth effect (reframing and
      * clock offset). Cached, as finding it searches through many framings.
      */
-    private fun arrangement(style: ClockStyle, viewWidth: Int, viewHeight: Int): DepthArrangement {
+    private fun arrangement(style: ClockStyle?, viewWidth: Int, viewHeight: Int): DepthArrangement {
         if (content != Content.IMAGE || imageWidth <= 0 || imageHeight <= 0) return DepthArrangement.NONE
+        val manualFraming = imageFraming?.let { Framing(it.zoom, it.shift * viewHeight, it.shiftX * viewWidth) }
+        if (style == null) {
+            // No clock: only the user's own framing applies.
+            return manualFraming?.let { DepthArrangement(it, 0f) } ?: DepthArrangement.NONE
+        }
         val mask = subjectMask
-        val key = listOf(style, mask, imageWidth, imageHeight, viewWidth, viewHeight, scaleMode, imageClockOffset)
+        val key = listOf(style, mask, imageWidth, imageHeight, viewWidth, viewHeight, scaleMode, imageClockOffset, imageFraming)
         arrangementCache?.let { if (key == arrangementKey) return it }
 
         val (halfWidth, halfHeight) = fittedHalfSize(imageWidth, imageHeight, viewWidth, viewHeight)
@@ -576,11 +595,13 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         val result = arrangeDepth(
             clock = style.settings,
             use24Hour = style.use24Hour,
+            typeface = style.typeface,
             width = viewWidth,
             height = viewHeight,
             photo = photoRect,
             cropped = scaleMode == ScaleMode.CROP,
             manualOffset = imageClockOffset,
+            manualFraming = manualFraming,
             subjectAt = mask?.let { m -> { u: Float, v: Float -> subjectStrength(m, u, v) } },
         )
         arrangementCache = result
