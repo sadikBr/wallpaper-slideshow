@@ -231,9 +231,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             }
             fullWidth("clock") {
                 ClockCard(
-                    clock = current.clock,
+                    // On when any wallpaper shows the clock.
+                    clock = current.clock.copy(enabled = current.allLooks.any { it.clock.enabled }),
                     depthSummary = depthSummary(current.media, viewModel.mediaInfoLoader, depthStates),
-                    onUpdate = viewModel::updateClock,
+                    // The switch is the master: it turns the clock on or off on every wallpaper.
+                    onUpdate = { transform -> viewModel.setClockEverywhere(transform(current.clock).enabled) },
                     onCustomize = { studioFor = current.media.firstOrNull() ?: "" },
                 )
             }

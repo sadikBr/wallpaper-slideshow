@@ -34,6 +34,8 @@ enum class TransitionStyle(val label: String) {
  * @property clockOffsets per-photo adjustment of the clock position (URI to share of screen height).
  * @property photoFramings per-photo zoom and position set in the editor (otherwise automatic).
  * @property widgets weather, battery and other widgets drawn on the wallpaper.
+ * @property itemLooks per-item clock and widgets; items without one use [clock] and [widgets]
+ *   (the default look).
  */
 data class WallpaperSettings(
     val media: List<String> = emptyList(),
@@ -49,7 +51,17 @@ data class WallpaperSettings(
     val clockOffsets: Map<String, Float> = emptyMap(),
     val photoFramings: Map<String, PhotoFraming> = emptyMap(),
     val widgets: WidgetSettings = WidgetSettings(),
+    val itemLooks: Map<String, WallpaperLook> = emptyMap(),
 ) {
+    /** The default look, used for new items and when the slideshow is empty. */
+    val defaultLook get() = WallpaperLook(clock, widgets)
+
+    /** The look of one item: its own, or the default. */
+    fun lookFor(uri: String?): WallpaperLook = uri?.let { itemLooks[it] } ?: defaultLook
+
+    /** Every look in use (the default and each item's), e.g. to know which data to fetch. */
+    val allLooks get() = listOf(defaultLook) + media.mapNotNull { itemLooks[it] }
+
     companion object {
         /** Choices for "next video every N seconds" (0, playing in full, is a separate switch). */
         val CLIP_SECONDS_OPTIONS = listOf(5, 10, 15, 20, 30, 45, 60)

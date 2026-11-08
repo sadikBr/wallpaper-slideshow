@@ -2,6 +2,7 @@ package com.sadikbr.videowallpaper.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -10,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONObject
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -44,6 +46,7 @@ class SettingsRepository(context: Context) {
                 clockOffsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]),
                 photoFramings = decodeFramings(prefs[Keys.PHOTO_FRAMINGS]),
                 widgets = readWidgets(prefs),
+                itemLooks = decodeLooks(prefs[Keys.ITEM_LOOKS], WallpaperLook(readClock(prefs), readWidgets(prefs))),
             )
         }
         .distinctUntilChanged()
@@ -71,7 +74,10 @@ class SettingsRepository(context: Context) {
     suspend fun setTransitionMs(value: Int) = dataStore.edit { it[Keys.TRANSITION_MS] = value }
 
     suspend fun updateClock(transform: (ClockSettings) -> ClockSettings) = dataStore.edit { prefs ->
-        val updated = transform(readClock(prefs))
+        writeClock(prefs, transform(readClock(prefs)))
+    }
+
+    private fun writeClock(prefs: MutablePreferences, updated: ClockSettings) {
         prefs[Keys.CLOCK_ENABLED] = updated.enabled
         prefs[Keys.CLOCK_COLOR] = updated.color
         prefs[Keys.CLOCK_WEIGHT] = updated.font.name
@@ -117,7 +123,10 @@ class SettingsRepository(context: Context) {
         .toMap()
 
     suspend fun updateWidgets(transform: (WidgetSettings) -> WidgetSettings) = dataStore.edit { prefs ->
-        val updated = transform(readWidgets(prefs))
+        writeWidgets(prefs, transform(readWidgets(prefs)))
+    }
+
+    private fun writeWidgets(prefs: MutablePreferences, updated: WidgetSettings) {
         prefs[Keys.WIDGET_WEATHER] = updated.weather
         prefs[Keys.WIDGET_AIR] = updated.airQuality
         prefs[Keys.WIDGET_BATTERY] = updated.battery
@@ -130,6 +139,38 @@ class SettingsRepository(context: Context) {
             else -> prefs[Keys.WIDGET_FAHRENHEIT] = updated.fahrenheit
         }
     }
+
+    /** Sets (or with null, removes) the look of the given items. */
+    suspend fun setItemLooks(looks: Map<String, WallpaperLook?>) = dataStore.edit { prefs ->
+        val default = WallpaperLook(readClock(prefs), readWidgets(prefs))
+        val current = decodeLooks(prefs[Keys.ITEM_LOOKS], default).toMutableMap()
+        looks.forEach { (uri, look) -> if (look == null) current.remove(uri) else current[uri] = look }
+        prefs[Keys.ITEM_LOOKS] = JSONObject().apply { current.forEach { (uri, look) -> put(uri, look.toJson()) } }.toString()
+    }
+
+    /** Applies [transform] to the default look and to every item's own look. */
+    suspend fun updateAllLooks(transform: (WallpaperLook) -> WallpaperLook) = dataStore.edit { prefs ->
+        val default = WallpaperLook(readClock(prefs), readWidgets(prefs))
+        val current = decodeLooks(prefs[Keys.ITEM_LOOKS], default)
+        val newDefault = transform(default)
+        writeClock(prefs, newDefault.clock)
+        writeWidgets(prefs, newDefault.widgets)
+        prefs[Keys.ITEM_LOOKS] = JSONObject().apply {
+            current.forEach { (uri, look) -> put(uri, transform(look).toJson()) }
+        }.toString()
+    }
+
+    /** Makes [look] the default and every item's look (the editor's "Apply to all"). */
+    suspend fun setLookForAll(look: WallpaperLook) = dataStore.edit { prefs ->
+        writeClock(prefs, look.clock)
+        writeWidgets(prefs, look.widgets)
+        prefs.remove(Keys.ITEM_LOOKS)
+    }
+
+    private fun decodeLooks(encoded: String?, default: WallpaperLook): Map<String, WallpaperLook> = runCatching {
+        val json = JSONObject(encoded ?: return emptyMap())
+        json.keys().asSequence().associateWith { WallpaperLook.fromJson(json.getJSONObject(it), default) }
+    }.getOrDefault(emptyMap())
 
     private fun readWidgets(prefs: Preferences) = WidgetSettings(
         weather = prefs[Keys.WIDGET_WEATHER] ?: false,
@@ -205,6 +246,7 @@ class SettingsRepository(context: Context) {
         val WIDGET_STYLE = stringPreferencesKey("widget_style")
         val WIDGET_POSITION = floatPreferencesKey("widget_position")
         val WIDGET_FAHRENHEIT = booleanPreferencesKey("widget_fahrenheit")
+        val ITEM_LOOKS = stringPreferencesKey("item_looks")
     }
 
     private companion object {

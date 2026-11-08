@@ -125,8 +125,9 @@ private fun PhonePreview(
     modifier: Modifier = Modifier,
 ) {
     val info by rememberMediaInfo(uri, loader)
-    val mask by rememberAlphaMask(uri, maskReady && settings.clock.enabled)
+    val mask by rememberAlphaMask(uri, maskReady && settings.lookFor(uri).clock.enabled)
     val widgetSnapshot by WidgetData.snapshot.collectAsState()
+    val look = settings.lookFor(uri)
     val thumbnail = info?.thumbnail
     Box(
         modifier
@@ -136,16 +137,16 @@ private fun PhonePreview(
             .border(4.dp, Color(0xFF2A2F3A), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        if (thumbnail != null || settings.clock.enabled || settings.widgets.anyEnabled) {
+        if (thumbnail != null || look.clock.enabled || look.widgets.anyEnabled) {
             // Mirrors the "fit to screen" and clock settings so their effect is visible here.
             DepthPreview(
                 photo = thumbnail,
                 mask = mask,
-                clock = settings.clock,
+                clock = look.clock,
                 use24Hour = use24Hour,
                 manualOffset = uri?.let { settings.clockOffsets[it] },
                 scaleMode = settings.scaleMode,
-                widgets = settings.widgets,
+                widgets = look.widgets,
                 widgetSnapshot = widgetSnapshot,
                 modifier = Modifier
                     .fillMaxSize()

@@ -101,6 +101,7 @@ import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.PhotoFraming
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TimeFormat
+import com.sadikbr.videowallpaper.data.WallpaperLook
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import com.sadikbr.videowallpaper.data.WidgetData
 import com.sadikbr.videowallpaper.data.WidgetSettings
@@ -121,12 +122,16 @@ import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 
 /** What the editor changed, applied when the user taps Done. */
 data class StudioResult(
-    val clock: ClockSettings,
     /** Per-photo clock positions; null values go back to automatic. */
     val clockOffsets: Map<String, Float?>,
     /** Per-photo framings; null values go back to automatic. */
     val framings: Map<String, PhotoFraming?>,
-    val widgets: WidgetSettings,
+    /** Looks changed in the editor, per item. */
+    val looks: Map<String, WallpaperLook>,
+    /** Set when "Apply to all" was used: the new default and look of every item. */
+    val lookForAll: WallpaperLook?,
+    /** The default look, when edited with an empty slideshow. */
+    val defaultLook: WallpaperLook?,
 )
 
 private enum class DragTarget { NONE, CLOCK, STRETCH, PHOTO, WIDGETS }
@@ -161,15 +166,33 @@ fun WallpaperStudio(
 ) {
     BackHandler(onBack = onDismiss)
 
-    var clock by remember { mutableStateOf(settings.clock.copy(enabled = true)) }
-    var widgets by remember { mutableStateOf(settings.widgets) }
     val widgetSnapshot by WidgetData.snapshot.collectAsState()
     val offsetEdits = remember { mutableStateMapOf<String, Float?>() }
     val framingEdits = remember { mutableStateMapOf<String, PhotoFraming?>() }
+    // Each wallpaper has its own look; edits go to the one being edited.
+    val lookEdits = remember { mutableStateMapOf<String, WallpaperLook>() }
+    var lookForAll by remember { mutableStateOf<WallpaperLook?>(null) }
+    var defaultLook by remember { mutableStateOf<WallpaperLook?>(null) }
     var selectedUri by remember { mutableStateOf(startUri ?: settings.media.firstOrNull()) }
     var tool by remember { mutableStateOf(Tool.entries[initialTool.coerceIn(0, Tool.entries.lastIndex)]) }
 
     val uri = selectedUri
+    val look = when {
+        uri == null -> defaultLook ?: settings.defaultLook
+        else -> lookEdits[uri] ?: lookForAll ?: settings.lookFor(uri)
+    }
+    val clock = look.clock
+    val widgets = look.widgets
+    fun setLook(newLook: WallpaperLook) {
+        if (uri == null) defaultLook = newLook else lookEdits[uri] = newLook
+    }
+    fun setClock(newClock: ClockSettings) = setLook(look.copy(clock = newClock))
+    fun setWidgets(newWidgets: WidgetSettings) = setLook(look.copy(widgets = newWidgets))
+    fun applyToAll() {
+        lookForAll = look
+        lookEdits.clear()
+        defaultLook = null
+    }
     val info by rememberMediaInfo(uri, loader)
     val isPhoto = info?.kind == MediaKind.IMAGE
     var large by remember(uri) { mutableStateOf<Bitmap?>(null) }
@@ -194,11 +217,20 @@ fun WallpaperStudio(
         TopBar(
             subtitle = info?.name,
             onClose = onDismiss,
-            onDone = { onDone(StudioResult(clock, offsetEdits.toMap(), framingEdits.toMap(), widgets)) },
+            onDone = {
+                onDone(StudioResult(offsetEdits.toMap(), framingEdits.toMap(), lookEdits.toMap(), lookForAll, defaultLook))
+            },
         )
 
         if (settings.media.size > 1) {
-            ItemStrip(media = settings.media, selected = uri, loader = loader, onSelect = { selectedUri = it })
+            ItemStrip(
+                media = settings.media,
+                selected = uri,
+                loader = loader,
+                onSelect = { selectedUri = it },
+                appliedToAll = lookForAll == look && lookEdits.isEmpty(),
+                onApplyToAll = { applyToAll() },
+            )
         }
 
         Box(
@@ -217,12 +249,12 @@ fun WallpaperStudio(
                 isPhoto = isPhoto,
                 manualOffset = if (isPhoto) savedOffset else null,
                 manualFraming = if (isPhoto) savedFraming else null,
-                onClockChange = { clock = it },
+                onClockChange = { setClock(it) },
                 onOffsetChange = { offset -> uri?.let { offsetEdits[it] = offset } },
                 onFramingChange = { framing -> uri?.let { framingEdits[it] = framing } },
                 widgets = widgets,
                 widgetSnapshot = widgetSnapshot,
-                onWidgetsChange = { widgets = it },
+                onWidgetsChange = { setWidgets(it) },
             )
         }
 
@@ -242,13 +274,13 @@ fun WallpaperStudio(
                     .padding(top = 16.dp),
             ) { current ->
                 when (current) {
-                    Tool.FONT -> FontPanel(clock) { clock = it }
-                    Tool.COLOR -> ColorPanel(clock, photo) { clock = it }
-                    Tool.GLASS -> GlassPanel(clock) { clock = it }
-                    Tool.WIDGETS -> WidgetsPanel(widgets) { widgets = it }
+                    Tool.FONT -> FontPanel(clock) { setClock(it) }
+                    Tool.COLOR -> ColorPanel(clock, photo) { setClock(it) }
+                    Tool.GLASS -> GlassPanel(clock) { setClock(it) }
+                    Tool.WIDGETS -> WidgetsPanel(widgets) { setWidgets(it) }
                     Tool.OPTIONS -> OptionsPanel(
                         clock = clock,
-                        onClockChange = { clock = it },
+                        onClockChange = { setClock(it) },
                         canResetPhoto = isPhoto && (savedOffset != null || savedFraming != null),
                         onResetPhoto = {
                             uri?.let {
@@ -518,7 +550,7 @@ private fun Editor(
             active == DragTarget.STRETCH -> "Pull down to stretch the digits"
             active == DragTarget.PHOTO -> "Pinch and drag to frame · double-tap to reset"
             active == DragTarget.WIDGETS -> "Drag the widgets · double-tap to put them under the clock"
-            showIntroHint -> if (isPhoto) "Tap the clock to select it · pinch the photo to frame it" else "Tap the clock to select it"
+            showIntroHint -> "Each wallpaper has its own look · tap the clock to select it"
             clockSelected -> "Drag, pinch, or pull the handle · double-tap to reset"
             else -> null
         }
@@ -545,9 +577,17 @@ private fun RectF.expandedContains(point: Offset, margin: Float) =
 
 /** Thumbnails of the slideshow items, to pick which one to edit. */
 @Composable
-private fun ItemStrip(media: List<String>, selected: String?, loader: MediaInfoLoader, onSelect: (String) -> Unit) {
+private fun ItemStrip(
+    media: List<String>,
+    selected: String?,
+    loader: MediaInfoLoader,
+    onSelect: (String) -> Unit,
+    appliedToAll: Boolean,
+    onApplyToAll: () -> Unit,
+) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
         contentPadding = PaddingValues(horizontal = 20.dp),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
@@ -569,6 +609,26 @@ private fun ItemStrip(media: List<String>, selected: String?, loader: MediaInfoL
                 info?.thumbnail?.let {
                     Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
+            }
+        }
+        item {
+            // Copies the look being edited to every wallpaper (and makes it the default).
+            Row(
+                Modifier
+                    .padding(start = 4.dp)
+                    .clip(CircleShape)
+                    .background(if (appliedToAll) Brand.Indigo else TileColor)
+                    .clickable(role = Role.Button, onClick = onApplyToAll)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(AppIcons.Layers, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (appliedToAll) "Same look on all" else "Same look for all",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
     }
@@ -791,38 +851,32 @@ private fun OptionsPanel(
     canResetPhoto: Boolean,
     onResetPhoto: () -> Unit,
 ) {
-    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // Time format as one segmented control.
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(CircleShape)
-                .background(TileColor),
-        ) {
-            TimeFormat.entries.forEach { format ->
-                val selected = clock.timeFormat == format
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(CircleShape)
-                        .background(if (selected) Brand.Coral else Color.Transparent)
-                        .clickable(role = Role.RadioButton) { onClockChange(clock.copy(timeFormat = format)) }
-                        .semantics { this.selected = selected }
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(format.label, color = Color.White, style = MaterialTheme.typography.labelLarge)
+        Segmented(
+            options = TimeFormat.entries.map { it.label },
+            selected = clock.timeFormat.ordinal,
+            modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        ) { onClockChange(clock.copy(timeFormat = TimeFormat.entries[it])) }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
+            item {
+                ToggleTile(AppIcons.Schedule, "Clock", clock.enabled, Modifier.width(96.dp)) {
+                    onClockChange(clock.copy(enabled = !clock.enabled))
                 }
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ToggleTile(AppIcons.Event, "Date", clock.showDate, Modifier.weight(1f)) {
-                onClockChange(clock.copy(showDate = !clock.showDate))
+            item {
+                ToggleTile(AppIcons.Event, "Date", clock.showDate, Modifier.width(92.dp)) {
+                    onClockChange(clock.copy(showDate = !clock.showDate))
+                }
             }
-            ToggleTile(AppIcons.AutoAwesome, "Framing", clock.autoPlace, Modifier.weight(1f)) {
-                onClockChange(clock.copy(autoPlace = !clock.autoPlace))
+            item {
+                ToggleTile(AppIcons.AutoAwesome, "Framing", clock.autoPlace, Modifier.width(112.dp)) {
+                    onClockChange(clock.copy(autoPlace = !clock.autoPlace))
+                }
             }
-            ToggleTile(Icons.Default.Refresh, "Reset photo", false, Modifier.weight(1f), enabled = canResetPhoto, onClick = onResetPhoto)
+            item {
+                ToggleTile(Icons.Default.Refresh, "Reset photo", false, Modifier.width(130.dp), enabled = canResetPhoto, onClick = onResetPhoto)
+            }
         }
     }
 }

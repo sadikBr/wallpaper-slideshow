@@ -16,6 +16,7 @@ import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.WidgetData
+import com.sadikbr.videowallpaper.data.WidgetSettings
 import com.sadikbr.videowallpaper.ui.studio.StudioResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -44,15 +45,27 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         // Widget data: battery now, weather with the location read while the app is open.
         WidgetData.start(application)
         viewModelScope.launch {
-            repository.settings.map { it.widgets }.distinctUntilChanged().collect { widgets ->
-                if (widgets.weather || widgets.airQuality) WidgetData.updateLocation(application)
-                if (widgets.anyEnabled) WidgetData.refresh(application, widgets)
-            }
+            repository.settings
+                .map { settings ->
+                    // What any wallpaper's widgets need.
+                    val all = settings.allLooks.map { it.widgets }
+                    WidgetSettings(
+                        weather = all.any { it.weather },
+                        airQuality = all.any { it.airQuality },
+                        battery = all.any { it.battery },
+                        calendar = all.any { it.calendar },
+                    )
+                }
+                .distinctUntilChanged()
+                .collect { needed ->
+                    if (needed.weather || needed.airQuality) WidgetData.updateLocation(application)
+                    if (needed.anyEnabled) WidgetData.refresh(application, needed)
+                }
         }
         // With the depth clock on, make sure every item has its cut-out (done once per item).
         viewModelScope.launch(Dispatchers.IO) {
             repository.settings
-                .map { if (it.clock.enabled) it.media else emptyList() }
+                .map { settings -> settings.media.filter { settings.lookFor(it).clock.enabled } }
                 .distinctUntilChanged()
                 .collect { media ->
                     // Photos and videos; videos take about a minute each and go after the photos.
@@ -98,6 +111,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         launch {
             repository.removeClockOffset(uri)
             repository.setPhotoFraming(uri, null)
+            repository.setItemLooks(mapOf(uri to null))
         }
         DepthMasks.delete(getApplication(), uri)
         runCatching {
@@ -127,10 +141,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     /** Saves what the wallpaper editor changed. */
     fun applyStudio(result: StudioResult) = launch {
-        repository.updateClock { result.clock }
+        result.lookForAll?.let { repository.setLookForAll(it) }
+        result.defaultLook?.let { look ->
+            repository.updateClock { look.clock }
+            repository.updateWidgets { look.widgets }
+        }
+        if (result.looks.isNotEmpty()) repository.setItemLooks(result.looks)
         result.clockOffsets.forEach { (uri, offset) -> repository.setClockOffset(uri, offset) }
         result.framings.forEach { (uri, framing) -> repository.setPhotoFraming(uri, framing) }
-        repository.updateWidgets { result.widgets }
+    }
+
+    /** The main "Depth clock" switch: turns the clock on or off for every wallpaper. */
+    fun setClockEverywhere(enabled: Boolean) = launch {
+        repository.updateAllLooks { it.copy(clock = it.clock.copy(enabled = enabled)) }
     }
 
     fun updateClock(transform: (ClockSettings) -> ClockSettings) = launch { repository.updateClock(transform) }

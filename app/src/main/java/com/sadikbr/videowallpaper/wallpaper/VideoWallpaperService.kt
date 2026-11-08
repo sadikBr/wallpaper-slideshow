@@ -40,6 +40,8 @@ import com.sadikbr.videowallpaper.clock.ClockFonts
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.VideoMaskSequence
 import com.sadikbr.videowallpaper.data.WidgetData
+import com.sadikbr.videowallpaper.data.WidgetSettings
+import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.TimeFormat
 import kotlin.math.roundToInt
 
@@ -96,16 +98,16 @@ class VideoWallpaperService : WallpaperService() {
             setTouchEventsEnabled(false)
             scope.launch {
                 repository.settings.collect { newSettings ->
-                    val clockWasEnabled = settings?.clock?.enabled == true
+                    val clockWasEnabled = settings?.lookFor(currentUri)?.clock?.enabled == true
                     settings = newSettings
                     refresh()
-                    if (newSettings.clock.enabled && !clockWasEnabled) reloadCurrentMask()
+                    if (newSettings.lookFor(currentUri).clock.enabled && !clockWasEnabled) reloadCurrentMask()
                 }
             }
             // Widget data (battery, weather, calendar) as it changes.
             WidgetData.start(this@VideoWallpaperService)
             scope.launch {
-                WidgetData.snapshot.collect { pushWidgets() }
+                WidgetData.snapshot.collect { renderer?.setWidgetSnapshot(it) }
             }
             // A photo on screen may get its cut-out while it's showing.
             scope.launch {
@@ -144,7 +146,7 @@ class VideoWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             isEngineVisible = visible
             if (visible) {
-                settings?.widgets?.let { if (it.anyEnabled) WidgetData.refresh(this@VideoWallpaperService, it) }
+                settings?.let(::refreshWidgetData)
                 idleReleaseJob?.cancel()
                 val existing = player
                 if (existing != null) {
@@ -184,20 +186,20 @@ class VideoWallpaperService : WallpaperService() {
 
             activeRenderer.setScaleMode(current.scaleMode)
             activeRenderer.setTransition(current.transition, current.transitionMs)
-            activeRenderer.setClock(clockStyle(current))
-            pushWidgets()
-            if (current.widgets.anyEnabled) WidgetData.refresh(this@VideoWallpaperService, current.widgets)
+            // The look of what's on screen (each item can have its own; edits apply right away).
+            activeRenderer.setCurrentLook(renderLook(current, currentUri))
+            activeRenderer.setWidgetSnapshot(WidgetData.snapshot.value)
+            refreshWidgetData(current)
             currentUri?.let { uri ->
                 if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentPlacement(current.clockOffsets[uri], current.photoFramings[uri])
             }
-            if (current.clock.enabled) {
-                // Cut-outs are made once per photo; ones already done are skipped.
-                DepthMasks.ensure(this@VideoWallpaperService, current.media)
-            }
+            // Cut-outs are made once per item, for items whose look has the clock on.
+            val needDepth = current.media.filter { current.lookFor(it).clock.enabled }
+            if (needDepth.isNotEmpty()) DepthMasks.ensure(this@VideoWallpaperService, needDepth)
             if (current.media.isEmpty()) {
                 releasePlayer()
                 retryJob?.cancel()
-                activeRenderer.showEmpty()
+                activeRenderer.showEmpty(renderLook(current, null))
                 return
             }
 
@@ -274,32 +276,37 @@ class VideoWallpaperService : WallpaperService() {
             return builder.build()
         }
 
-        /** Sends the widgets' settings and latest data to the renderer. */
-        private fun pushWidgets() {
-            val current = settings ?: return
-            val target = renderer ?: return
-            val widgets = current.widgets
-            if (!widgets.anyEnabled) {
-                target.setWidgets(null)
-                return
-            }
-            val use24Hour = clockStyle(current)?.use24Hour ?: DateFormat.is24HourFormat(this@VideoWallpaperService)
-            target.setWidgets(
+        /** The clock and widgets of [uri] (or the default look), ready for the renderer. */
+        private fun renderLook(current: WallpaperSettings, uri: String?): RenderLook {
+            val look = current.lookFor(uri)
+            val clock = clockStyle(look.clock)
+            val widgets = look.widgets.takeIf { it.anyEnabled }?.let {
                 WidgetRender(
-                    settings = widgets,
-                    snapshot = WidgetData.snapshot.value,
-                    use24Hour = use24Hour,
-                    color = if (current.clock.enabled) current.clock.color else android.graphics.Color.WHITE,
+                    settings = it,
+                    use24Hour = clock?.use24Hour ?: DateFormat.is24HourFormat(this@VideoWallpaperService),
+                    color = if (look.clock.enabled) look.clock.color else android.graphics.Color.WHITE,
                     signatureTypeface = ClockFonts.signature(this@VideoWallpaperService),
-                ),
+                )
+            }
+            return RenderLook(clock, widgets)
+        }
+
+        /** Updates weather / calendar data needed by any look in use. */
+        private fun refreshWidgetData(current: WallpaperSettings) {
+            val looks = current.allLooks.map { it.widgets }
+            val needed = WidgetSettings(
+                weather = looks.any { it.weather },
+                airQuality = looks.any { it.airQuality },
+                battery = looks.any { it.battery },
+                calendar = looks.any { it.calendar },
             )
+            if (needed.anyEnabled) WidgetData.refresh(this@VideoWallpaperService, needed)
         }
 
         private fun kindOf(uri: String): MediaKind =
             kinds.getOrPut(uri) { MediaKind.of(this@VideoWallpaperService, Uri.parse(uri)) }
 
-        private fun clockStyle(current: WallpaperSettings): ClockStyle? {
-            val clock = current.clock
+        private fun clockStyle(clock: ClockSettings): ClockStyle? {
             if (!clock.enabled) return null
             val use24Hour = when (clock.timeFormat) {
                 TimeFormat.SYSTEM -> DateFormat.is24HourFormat(this@VideoWallpaperService)
@@ -311,7 +318,7 @@ class VideoWallpaperService : WallpaperService() {
 
         /** Loads the cut-out of [uri] if the depth clock is on (call off the main thread). */
         private fun maskFor(uri: String): Bitmap? =
-            if (settings?.clock?.enabled == true) DepthMasks.loadMask(this@VideoWallpaperService, uri) else null
+            if (settings?.lookFor(uri)?.clock?.enabled == true) DepthMasks.loadMask(this@VideoWallpaperService, uri) else null
 
         /** Re-sends the cut-out of the photo on screen, e.g. once it has been made. */
         private fun reloadCurrentMask() {
@@ -329,7 +336,7 @@ class VideoWallpaperService : WallpaperService() {
 
         /** Loads the per-frame cut-outs of video [uri] if the depth clock is on (call off the main thread). */
         private fun videoMasksFor(uri: String): VideoMaskSequence? =
-            if (settings?.clock?.enabled == true) DepthMasks.loadVideoMasks(this@VideoWallpaperService, uri) else null
+            if (settings?.lookFor(uri)?.clock?.enabled == true) DepthMasks.loadVideoMasks(this@VideoWallpaperService, uri) else null
 
         /** Settings that can change on a running player without rebuilding the playlist. */
         private fun applyLiveSettings(exoPlayer: ExoPlayer, current: WallpaperSettings) {
@@ -383,9 +390,14 @@ class VideoWallpaperService : WallpaperService() {
                 val isImage = kinds[uri] == MediaKind.IMAGE
                 val clockOffset = settings?.clockOffsets?.get(uri)
                 val framing = settings?.photoFramings?.get(uri)
+                val look = settings?.let { renderLook(it, uri) } ?: RenderLook(null, null)
                 // Queued in order: the renderer pairs each photo hand-over with the next decoded photo.
                 scope.launch(activationDispatcher) {
-                    if (isImage) target.activateImage(maskFor(uri), clockOffset, framing) else target.activateVideo(videoMasksFor(uri))
+                    if (isImage) {
+                        target.activateImage(maskFor(uri), clockOffset, framing, look)
+                    } else {
+                        target.activateVideo(videoMasksFor(uri), look)
+                    }
                 }
             }
 

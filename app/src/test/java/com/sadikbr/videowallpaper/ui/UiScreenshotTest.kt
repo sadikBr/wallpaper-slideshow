@@ -52,10 +52,13 @@ class UiScreenshotTest {
 
     private val photoUri = "file:///sample/photo.png"
 
+    private val secondUri = "file:///sample/second.png"
+
     private fun loaderWithSamplePhoto(): MediaInfoLoader {
         val bitmap = javaClass.classLoader!!.getResourceAsStream("sample_photo.png").use { BitmapFactory.decodeStream(it) }
         return MediaInfoLoader(paparazzi.context).apply {
             prime(photoUri, MediaInfo(MediaKind.IMAGE, "Violet Peaks", null, bitmap, available = true))
+            prime(secondUri, MediaInfo(MediaKind.IMAGE, "Second photo", null, bitmap, available = true))
         }
     }
 
@@ -77,10 +80,14 @@ class UiScreenshotTest {
     @Test
     fun editorWidgets() = editorWithTool(3)
 
+    /** Two wallpapers: the item strip, and "Apply to all" in Options. */
+    @Test
+    fun editorTwoWallpapers() = editorWithTool(4, settings.copy(media = listOf(photoUri, secondUri)))
+
     @Test
     fun editorOptions() = editorWithTool(4)
 
-    private fun editorWithTool(tool: Int) {
+    private fun editorWithTool(tool: Int, settings: WallpaperSettings = this.settings) {
         val loader = loaderWithSamplePhoto()
         paparazzi.snapshot {
             // No Activity here: a registry that ignores permission requests.

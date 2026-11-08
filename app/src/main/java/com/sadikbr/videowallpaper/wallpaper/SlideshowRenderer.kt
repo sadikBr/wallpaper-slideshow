@@ -46,14 +46,16 @@ import kotlin.math.roundToInt
 /** The wallpaper clock's look, with the 12/24-hour choice already resolved. */
 internal data class ClockStyle(val settings: ClockSettings, val use24Hour: Boolean, val typeface: Typeface)
 
-/** What the widgets show and how. */
+/** How the widgets look (their data comes separately, as it is shared by every wallpaper). */
 internal data class WidgetRender(
     val settings: WidgetSettings,
-    val snapshot: WidgetSnapshot,
     val use24Hour: Boolean,
     val color: Int,
     val signatureTypeface: Typeface,
 )
+
+/** The clock and widgets of one wallpaper; null parts are not shown. */
+internal data class RenderLook(val clock: ClockStyle?, val widgets: WidgetRender?)
 
 /**
  * Draws the slideshow onto the wallpaper surface with OpenGL ES on its own thread.
@@ -96,6 +98,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var dateTexture = 0
     private var widgetTexture = 0
     private var widgets: WidgetRender? = null
+    private var widgetSnapshot = WidgetSnapshot()
+    private var nextImageLook: RenderLook? = null
+    private var pendingVideoLook: RenderLook? = null
     private var widgetKey: List<Any?>? = null
     private var widgetLayout: WidgetLayout? = null
     private var maxTextureSize = 2048
@@ -217,8 +222,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
      * @param clockOffset the photo's clock position adjustment, or null to place the clock
      *   automatically so the subject overlaps it.
      */
-    fun activateImage(mask: Bitmap?, clockOffset: Float?, framing: PhotoFraming?) = post {
+    fun activateImage(mask: Bitmap?, clockOffset: Float?, framing: PhotoFraming?, look: RenderLook) = post {
         active = Content.IMAGE
+        nextImageLook = look
         nextImageMask = mask
         nextImageClockOffset = clockOffset
         nextImageFraming = framing
@@ -232,16 +238,18 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     /** The current item is now a video: show its frames, including any that arrived early. */
-    fun activateVideo(masks: VideoMaskSequence?) = post {
+    fun activateVideo(masks: VideoMaskSequence?, look: RenderLook) = post {
         active = Content.VIDEO
         waitingForImage = false
         if (content == Content.VIDEO && System.nanoTime() - lastVideoItemStartNs < MASK_MATCH_WINDOW_NS) {
-            // The video's first frame is already on screen: its cut-outs apply right away.
+            // The video's first frame is already on screen: its cut-outs and look apply right away.
             setVideoMasks(masks)
+            applyLook(look)
         } else {
             // Applied when the video's first frame arrives.
             pendingVideoMasks = masks
             hasPendingVideoMasks = true
+            pendingVideoLook = look
         }
         val queued = pendingVideoFrames
         pendingVideoFrames = 0
@@ -291,20 +299,25 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     /** The wallpaper's own clock, or null for none. */
-    /** The widgets to draw, or null for none. */
-    fun setWidgets(render: WidgetRender?) = post {
-        if (widgets != render) {
-            widgets = render
-            scheduleMinuteTick()
+    /** The latest widget data (weather, battery, ...). */
+    fun setWidgetSnapshot(snapshot: WidgetSnapshot) = post {
+        if (widgetSnapshot != snapshot) {
+            widgetSnapshot = snapshot
             drawUnlessAnimating()
         }
     }
 
-    fun setClock(style: ClockStyle?) = post {
-        if (clockStyle != style) {
-            clockStyle = style
+    /** The look of what is on screen changed (e.g. edited in the app). */
+    fun setCurrentLook(look: RenderLook) = post {
+        applyLook(look)
+        drawUnlessAnimating()
+    }
+
+    private fun applyLook(look: RenderLook) {
+        if (clockStyle != look.clock || widgets != look.widgets) {
+            clockStyle = look.clock
+            widgets = look.widgets
             scheduleMinuteTick()
-            drawUnlessAnimating()
         }
     }
 
@@ -337,8 +350,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         transitionMs = durationMs
     }
 
-    fun showEmpty() = post {
+    fun showEmpty(look: RenderLook) = post {
         beginTransition()
+        applyLook(look)
         active = Content.EMPTY
         content = Content.EMPTY
         showEmptyColor = true
@@ -390,8 +404,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             lastVideoItemStartNs = System.nanoTime()
             // A new video: its own cut-outs if they were handed over already, otherwise none yet.
             setVideoMasks(if (hasPendingVideoMasks) pendingVideoMasks else null)
+            pendingVideoLook?.let(::applyLook)
             pendingVideoMasks = null
             hasPendingVideoMasks = false
+            pendingVideoLook = null
         }
         framePts.removeFirstOrNull()?.let { videoPts = it }
         surfaceTexture.updateTexImage()
@@ -414,6 +430,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         uploadMask(nextImageMask)
         imageClockOffset = nextImageClockOffset
         imageFraming = nextImageFraming
+        nextImageLook?.let(::applyLook)
+        nextImageLook = null
         nextImageFraming = null
         nextImageMask = null
         nextImageClockOffset = 0f
@@ -637,12 +655,12 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         val render = widgets ?: return
         if (!render.settings.anyEnabled) return
         val minute = System.currentTimeMillis() / 60_000
-        val key = listOf(render, minute, viewWidth, viewHeight, clockBottom)
+        val key = listOf(render, widgetSnapshot, minute, viewWidth, viewHeight, clockBottom)
         val layout = if (key == widgetKey) {
             widgetLayout
         } else {
             WidgetPainter.layout(
-                render.settings, render.snapshot, render.use24Hour, render.color, render.signatureTypeface,
+                render.settings, widgetSnapshot, render.use24Hour, render.color, render.signatureTypeface,
                 viewWidth, viewHeight, clockBottom,
             )?.also { renderToTexture(widgetTexture, it.bounds) { canvas -> it.draw(canvas) } }
                 .also {

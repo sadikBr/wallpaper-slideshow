@@ -77,7 +77,6 @@ fun ClockCard(
             ) {
                 Switch(checked = clock.enabled, onCheckedChange = { on -> onUpdate { it.copy(enabled = on) } })
             }
-            if (!clock.enabled) return@Column
 
             ItemDivider()
             Button(
@@ -88,10 +87,10 @@ fun ClockCard(
             ) {
                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Customize clock & photos")
+                Text("Customize wallpapers")
             }
             Text(
-                "Drag, pinch and stretch the clock right on your wallpaper; fonts, colours, glass and clock options are all in there.",
+                "Give each wallpaper its own clock and widgets: drag, pinch and stretch right on the wallpaper, and pick fonts, colours, glass and widgets.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 72.dp, end = 16.dp, bottom = 4.dp),
