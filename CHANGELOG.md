@@ -1,10 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [1.2.0] - 2026-11-08
 
 ### New
 - **Home screen look**: the home screen can now look different from the lock screen, so you always know which one you're on. After you unlock, the clock and widgets fade away (each can be kept), and the picture can be dimmed or blurred behind your apps. Set it under "Home screen look" on the app's home page, with the lock screen and home screen side by side. A wallpaper set for only one of the two screens (Android 14+) always uses that screen's look.
 - **Arabic signatures**: the signature can be written in Arabic, in the Aref Ruqaa calligraphy font or the Reem Kufi font (Arabic text picks Ruqaa automatically). The signature editor has a live preview, a font choice and a size slider.
+
+### Install
+Download `WallpaperSlideshow-v1.2.0.apk` below and open it on your phone. It installs over earlier versions and keeps your settings. Note: the home screen now hides the clock and widgets by default; turn them back on under "Home screen look" if you prefer.
 
 ## [1.1.0] - 2026-11-08
 
