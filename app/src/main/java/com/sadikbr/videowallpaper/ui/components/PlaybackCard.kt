@@ -1,7 +1,11 @@
 package com.sadikbr.videowallpaper.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,11 +38,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.sadikbr.videowallpaper.data.ScaleMode
+import com.sadikbr.videowallpaper.data.TransitionStyle
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import com.sadikbr.videowallpaper.ui.theme.AppIcons
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PlaybackCard(
     settings: WallpaperSettings,
@@ -47,6 +53,8 @@ fun PlaybackCard(
     onImageSecondsChange: (Int) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onScaleModeChange: (ScaleMode) -> Unit,
+    onTransitionChange: (TransitionStyle) -> Unit,
+    onTransitionMsChange: (Int) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -145,8 +153,45 @@ fun PlaybackCard(
                     }
                 }
             }
+            ItemDivider()
+
+            SettingRow(
+                icon = AppIcons.Animation,
+                title = "Transition",
+                subtitle = if (settings.transition == TransitionStyle.NONE) {
+                    "Cut straight to the next item"
+                } else {
+                    "How each item gives way to the next"
+                },
+            )
+            FlowRow(
+                modifier = Modifier.padding(start = 72.dp, end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TransitionStyle.entries.forEach { style ->
+                    FilterChip(
+                        selected = settings.transition == style,
+                        onClick = { onTransitionChange(style) },
+                        label = { Text(style.label) },
+                    )
+                }
+            }
+            if (settings.transition != TransitionStyle.NONE) {
+                StepSlider(
+                    options = WallpaperSettings.TRANSITION_MS_OPTIONS,
+                    selected = settings.transitionMs,
+                    label = { formatSeconds(it) },
+                    onSelected = onTransitionMsChange,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+private fun formatSeconds(ms: Int): String {
+    val seconds = ms / 1000f
+    return if (seconds % 1f == 0f) "${seconds.toInt()}s" else "${seconds}s"
 }
 
 @Composable

@@ -10,11 +10,14 @@ import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLUtils
+import android.opengl.Matrix
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import android.view.Choreographer
 import android.view.Surface
 import com.sadikbr.videowallpaper.data.ScaleMode
+import com.sadikbr.videowallpaper.data.TransitionStyle
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -33,6 +36,10 @@ import java.util.concurrent.TimeUnit
  * The player prepares upcoming items early and may hand over the next photo (or the first
  * frame of the next video) before its turn. Those are held back until the item becomes
  * current, so nothing flashes on screen ahead of time.
+ *
+ * Transitions: just before new content replaces the old, the picture on screen is copied
+ * into an offscreen texture (the "snapshot"). For the next [transitionMs] the new content is
+ * drawn live while the snapshot is faded, zoomed or slid away on top of it.
  */
 internal class SlideshowRenderer(windowSurface: Surface) {
 
@@ -51,6 +58,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var imageTexture = 0
     private var maxTextureSize = 2048
     private lateinit var surfaceTexture: SurfaceTexture
+    private lateinit var choreographer: Choreographer
     private val videoMatrix = FloatArray(16)
     private val vertices: FloatBuffer = ByteBuffer.allocateDirect(4 * 4 * 4)
         .order(ByteOrder.nativeOrder())
@@ -59,6 +67,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     /** What is drawn right now. */
     private var content = Content.EMPTY
 
+    /** True once [showEmpty] was called: paint the "no media" color instead of black. */
+    private var showEmptyColor = false
+
     /** What kind of item the player says is current. */
     private var active = Content.EMPTY
 
@@ -66,14 +77,31 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private val pendingImages = ArrayDeque<Bitmap>()
     private var waitingForImage = false
 
-    /** A video frame arrived while a photo was current; shown when a video becomes current. */
-    private var hasPendingVideoFrame = false
+    /** Video frames queued in the SurfaceTexture but not yet latched, because a photo is current. */
+    private var pendingVideoFrames = 0
+
+    /** The next video frame is the first of a new item, so it should start a transition. */
+    private var videoItemStarting = false
+    private var nextVideoWidth = 0
+    private var nextVideoHeight = 0
+
     private var scaleMode = ScaleMode.CROP
     private var videoWidth = 0
     private var videoHeight = 0
     private var imageWidth = 0
     private var imageHeight = 0
     private var released = false
+
+    // Transition state.
+    private var transitionStyle = TransitionStyle.CROSSFADE
+    private var transitionMs = 800
+    private var transitionStartNs = NOT_TRANSITIONING
+    private var frameScheduled = false
+    private val frameCallback = Choreographer.FrameCallback { onTransitionFrame() }
+
+    // Two offscreen frames: the snapshot being faded out, and a spare to capture the next one.
+    private val snapshot = OffscreenFrame()
+    private val spare = OffscreenFrame()
 
     /** The surface the video player should decode into. */
     lateinit var videoSurface: Surface
@@ -86,6 +114,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             throw IllegalStateException("Could not set up OpenGL for the wallpaper", error)
         }
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Public API (any thread). Every call is forwarded to the renderer thread.
 
     /** A decoded photo from the player, possibly ahead of its turn. */
     fun onImageDecoded(bitmap: Bitmap) = post {
@@ -101,7 +132,6 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     /** The current item is now a photo: show the next decoded one (or wait for it). */
     fun activateImage() = post {
         active = Content.IMAGE
-        hasPendingVideoFrame = false
         val next = pendingImages.removeFirstOrNull()
         if (next != null) {
             displayImage(next)
@@ -111,29 +141,33 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
     }
 
-    /** The current item is now a video: show its frames as they arrive. */
+    /** The current item is now a video: show its frames, including any that arrived early. */
     fun activateVideo() = post {
         active = Content.VIDEO
         waitingForImage = false
-        if (hasPendingVideoFrame) {
-            hasPendingVideoFrame = false
-            content = Content.VIDEO
-            draw()
-        }
-        // Otherwise the previous content stays until the first frame arrives.
+        val queued = pendingVideoFrames
+        pendingVideoFrames = 0
+        repeat(queued) { latchVideoFrame() }
+        // With nothing queued, the previous content stays until the first frame arrives.
+    }
+
+    /**
+     * Called (from the player's thread) just before the first frame of a new video item is
+     * released, so that frame starts a transition instead of cutting in.
+     */
+    fun onVideoItemStarting(width: Int, height: Int) = post {
+        videoItemStarting = true
+        // Applied when that frame is latched, so the old frame keeps its own shape until then.
+        nextVideoWidth = width
+        nextVideoHeight = height
     }
 
     /** Forgets photos and frames handed over early, e.g. after the playlist was rebuilt. */
     fun clearPending() = post {
         pendingImages.clear()
         waitingForImage = false
-        hasPendingVideoFrame = false
-    }
-
-    fun setVideoSize(width: Int, height: Int) = post {
-        videoWidth = width
-        videoHeight = height
-        if (content == Content.VIDEO) draw()
+        drainVideoFrames()
+        videoItemStarting = false
     }
 
     fun setScaleMode(mode: ScaleMode) = post {
@@ -143,13 +177,21 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
     }
 
+    fun setTransition(style: TransitionStyle, durationMs: Int) = post {
+        transitionStyle = style
+        transitionMs = durationMs
+    }
+
     fun showEmpty() = post {
+        beginTransition()
         active = Content.EMPTY
         content = Content.EMPTY
+        showEmptyColor = true
         pendingImages.clear()
         waitingForImage = false
-        hasPendingVideoFrame = false
-        draw()
+        drainVideoFrames()
+        videoItemStarting = false
+        drawUnlessAnimating()
     }
 
     /** Draws the current content again, e.g. after the surface changed size. */
@@ -165,6 +207,264 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
         thread.quitSafely()
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Content changes (renderer thread).
+
+    private fun onVideoFrameAvailable() {
+        if (released) return
+        if (active == Content.VIDEO) {
+            latchVideoFrame()
+        } else {
+            // A frame of an upcoming video: leave it queued until that video becomes current.
+            pendingVideoFrames++
+        }
+    }
+
+    private fun latchVideoFrame() {
+        if (videoItemStarting || content != Content.VIDEO) {
+            // Capture the old picture before the new frame overwrites the video texture.
+            beginTransition()
+        }
+        if (videoItemStarting) {
+            videoItemStarting = false
+            videoWidth = nextVideoWidth
+            videoHeight = nextVideoHeight
+        }
+        surfaceTexture.updateTexImage()
+        surfaceTexture.getTransformMatrix(videoMatrix)
+        content = Content.VIDEO
+        drawUnlessAnimating()
+    }
+
+    private fun drainVideoFrames() {
+        repeat(pendingVideoFrames) { runCatching { surfaceTexture.updateTexImage() } }
+        pendingVideoFrames = 0
+    }
+
+    private fun displayImage(bitmap: Bitmap) {
+        // Capture the old picture before the new photo overwrites the image texture.
+        beginTransition()
+        val upload = fitToTextureLimit(bitmap)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, imageTexture)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, upload, 0)
+        imageWidth = upload.width
+        imageHeight = upload.height
+        if (upload !== bitmap) upload.recycle()
+        content = Content.IMAGE
+        drawUnlessAnimating()
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Transitions.
+
+    private val isTransitioning get() = transitionStartNs != NOT_TRANSITIONING
+
+    /** Freezes what is on screen now, and starts animating from it to whatever comes next. */
+    private fun beginTransition() {
+        if (transitionStyle == TransitionStyle.NONE || transitionMs <= 0) {
+            transitionStartNs = NOT_TRANSITIONING
+            return
+        }
+        val (width, height) = surfaceSize() ?: return
+        spare.ensureSize(width, height)
+        snapshot.ensureSize(width, height)
+
+        // Render the current scene (including any transition still running) into the spare frame.
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, spare.framebuffer)
+        drawScene(width, height)
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        snapshot.swapWith(spare)
+
+        transitionStartNs = System.nanoTime()
+        scheduleTransitionFrame()
+    }
+
+    private fun scheduleTransitionFrame() {
+        if (!frameScheduled) {
+            frameScheduled = true
+            choreographer.postFrameCallback(frameCallback)
+        }
+    }
+
+    private fun onTransitionFrame() {
+        frameScheduled = false
+        if (released || !isTransitioning) return
+        draw()
+        if (isTransitioning) scheduleTransitionFrame()
+    }
+
+    /** 0 → 1 over the transition, eased; 1 when no transition is running. */
+    private fun transitionProgress(): Float {
+        if (!isTransitioning) return 1f
+        val elapsedMs = (System.nanoTime() - transitionStartNs) / 1_000_000f
+        val linear = (elapsedMs / transitionMs).coerceIn(0f, 1f)
+        return linear * linear * (3f - 2f * linear) // smoothstep
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Drawing.
+
+    private fun drawUnlessAnimating() {
+        // While a transition runs, the frame callback redraws on every display refresh.
+        if (!isTransitioning) draw()
+    }
+
+    private fun draw() {
+        if (released || eglSurface == EGL14.EGL_NO_SURFACE) return
+        val (width, height) = surfaceSize() ?: return
+        val finished = isTransitioning && transitionProgress() >= 1f
+        if (finished) transitionStartNs = NOT_TRANSITIONING
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        drawScene(width, height)
+        EGL14.eglSwapBuffers(display, eglSurface)
+    }
+
+    /** Draws the current scene into whichever framebuffer is bound. */
+    private fun drawScene(width: Int, height: Int) {
+        GLES20.glViewport(0, 0, width, height)
+        if (content == Content.EMPTY && showEmptyColor) {
+            GLES20.glClearColor(EMPTY_RED, EMPTY_GREEN, EMPTY_BLUE, 1f)
+        } else {
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+        }
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+
+        if (!isTransitioning) {
+            drawContent(width, height)
+            return
+        }
+        val p = transitionProgress()
+        when (transitionStyle) {
+            TransitionStyle.NONE -> drawContent(width, height)
+            TransitionStyle.CROSSFADE -> {
+                drawContent(width, height)
+                drawSnapshot(alpha = 1f - p)
+            }
+            TransitionStyle.FADE_BLACK -> {
+                // Old picture fades to black, then the new one fades in.
+                if (p < 0.5f) drawSnapshot(alpha = 1f - 2f * p) else drawContent(width, height, alpha = 2f * p - 1f)
+            }
+            TransitionStyle.ZOOM -> {
+                drawContent(width, height)
+                drawSnapshot(alpha = 1f - p, scale = 1f + 0.35f * p)
+            }
+            TransitionStyle.SLIDE -> {
+                // Old picture moves out to the left while the new one comes in from the right.
+                drawSnapshot(alpha = 1f, offsetX = -2f * p)
+                drawContent(width, height, offsetX = 2f * (1f - p))
+            }
+        }
+    }
+
+    private fun drawContent(viewWidth: Int, viewHeight: Int, alpha: Float = 1f, offsetX: Float = 0f) {
+        val (contentWidth, contentHeight) = when (content) {
+            Content.EMPTY -> return
+            Content.VIDEO -> if (videoWidth > 0 && videoHeight > 0) {
+                videoWidth to videoHeight
+            } else {
+                viewWidth to viewHeight
+            }
+            Content.IMAGE -> imageWidth to imageHeight
+        }
+        if (contentWidth <= 0 || contentHeight <= 0) return
+
+        // Scale the content to cover (crop) or fit inside (letterbox) the screen, centred.
+        val scaleX = viewWidth.toFloat() / contentWidth
+        val scaleY = viewHeight.toFloat() / contentHeight
+        val scale = if (scaleMode == ScaleMode.CROP) maxOf(scaleX, scaleY) else minOf(scaleX, scaleY)
+        val isVideo = content == Content.VIDEO
+        drawQuad(
+            program = if (isVideo) videoProgram else imageProgram,
+            textureTarget = if (isVideo) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D,
+            texture = if (isVideo) videoTexture else imageTexture,
+            texMatrix = if (isVideo) videoMatrix else FLIP_VERTICAL,
+            halfWidth = contentWidth * scale / viewWidth,
+            halfHeight = contentHeight * scale / viewHeight,
+            offsetX = offsetX,
+            alpha = alpha,
+        )
+    }
+
+    private fun drawSnapshot(alpha: Float, scale: Float = 1f, offsetX: Float = 0f) {
+        if (snapshot.texture == 0 || alpha <= 0f) return
+        drawQuad(
+            program = imageProgram,
+            textureTarget = GLES20.GL_TEXTURE_2D,
+            texture = snapshot.texture,
+            texMatrix = IDENTITY,
+            halfWidth = scale,
+            halfHeight = scale,
+            offsetX = offsetX,
+            alpha = alpha,
+        )
+    }
+
+    private fun drawQuad(
+        program: Int,
+        textureTarget: Int,
+        texture: Int,
+        texMatrix: FloatArray,
+        halfWidth: Float,
+        halfHeight: Float,
+        offsetX: Float,
+        alpha: Float,
+    ) {
+        val left = offsetX - halfWidth
+        val right = offsetX + halfWidth
+        vertices.clear()
+        vertices.put(
+            floatArrayOf(
+                // x, y, u, v  (triangle strip: bottom-left, bottom-right, top-left, top-right)
+                left, -halfHeight, 0f, 0f,
+                right, -halfHeight, 1f, 0f,
+                left, halfHeight, 0f, 1f,
+                right, halfHeight, 1f, 1f,
+            )
+        )
+
+        GLES20.glUseProgram(program)
+        val position = GLES20.glGetAttribLocation(program, "aPosition")
+        val texCoord = GLES20.glGetAttribLocation(program, "aTexCoord")
+        vertices.position(0)
+        GLES20.glVertexAttribPointer(position, 2, GLES20.GL_FLOAT, false, 16, vertices)
+        GLES20.glEnableVertexAttribArray(position)
+        vertices.position(2)
+        GLES20.glVertexAttribPointer(texCoord, 2, GLES20.GL_FLOAT, false, 16, vertices)
+        GLES20.glEnableVertexAttribArray(texCoord)
+
+        GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uTexMatrix"), 1, false, texMatrix, 0)
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uAlpha"), alpha.coerceIn(0f, 1f))
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(textureTarget, texture)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "sTexture"), 0)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(position)
+        GLES20.glDisableVertexAttribArray(texCoord)
+    }
+
+    private fun surfaceSize(): Pair<Int, Int>? {
+        val size = IntArray(2)
+        EGL14.eglQuerySurface(display, eglSurface, EGL14.EGL_WIDTH, size, 0)
+        EGL14.eglQuerySurface(display, eglSurface, EGL14.EGL_HEIGHT, size, 1)
+        return if (size[0] > 0 && size[1] > 0) size[0] to size[1] else null
+    }
+
+    private fun fitToTextureLimit(bitmap: Bitmap): Bitmap {
+        val largest = maxOf(bitmap.width, bitmap.height)
+        if (largest <= maxTextureSize) return bitmap
+        val ratio = maxTextureSize.toFloat() / largest
+        return Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * ratio).toInt().coerceAtLeast(1),
+            (bitmap.height * ratio).toInt().coerceAtLeast(1),
+            true,
+        )
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Setup and teardown.
 
     private fun setUp(windowSurface: Surface) {
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
@@ -200,135 +500,24 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE, maxSize, 0)
         if (maxSize[0] > 0) maxTextureSize = maxSize[0]
 
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+
         videoProgram = buildProgram(VERTEX_SHADER, VIDEO_FRAGMENT_SHADER)
         imageProgram = buildProgram(VERTEX_SHADER, IMAGE_FRAGMENT_SHADER)
         videoTexture = createTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES)
         imageTexture = createTexture(GLES20.GL_TEXTURE_2D)
 
         surfaceTexture = SurfaceTexture(videoTexture)
-        surfaceTexture.setOnFrameAvailableListener({ onVideoFrame() }, handler)
+        surfaceTexture.setOnFrameAvailableListener({ onVideoFrameAvailable() }, handler)
         videoSurface = Surface(surfaceTexture)
+        choreographer = Choreographer.getInstance() // Bound to this thread's looper.
 
         draw()
-    }
-
-    private fun onVideoFrame() {
-        if (released) return
-        surfaceTexture.updateTexImage()
-        surfaceTexture.getTransformMatrix(videoMatrix)
-        if (active == Content.VIDEO) {
-            content = Content.VIDEO
-            draw()
-        } else {
-            hasPendingVideoFrame = true
-        }
-    }
-
-    private fun displayImage(bitmap: Bitmap) {
-        val upload = fitToTextureLimit(bitmap)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, imageTexture)
-        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, upload, 0)
-        imageWidth = upload.width
-        imageHeight = upload.height
-        if (upload !== bitmap) upload.recycle()
-        content = Content.IMAGE
-        draw()
-    }
-
-    private fun draw() {
-        if (released || eglSurface == EGL14.EGL_NO_SURFACE) return
-        val size = IntArray(2)
-        EGL14.eglQuerySurface(display, eglSurface, EGL14.EGL_WIDTH, size, 0)
-        EGL14.eglQuerySurface(display, eglSurface, EGL14.EGL_HEIGHT, size, 1)
-        val viewWidth = size[0]
-        val viewHeight = size[1]
-        if (viewWidth <= 0 || viewHeight <= 0) return
-
-        GLES20.glViewport(0, 0, viewWidth, viewHeight)
-        if (content == Content.EMPTY) {
-            GLES20.glClearColor(EMPTY_RED, EMPTY_GREEN, EMPTY_BLUE, 1f)
-        } else {
-            GLES20.glClearColor(0f, 0f, 0f, 1f)
-        }
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-
-        if (content != Content.EMPTY) {
-            val (contentWidth, contentHeight) = when (content) {
-                Content.VIDEO -> if (videoWidth > 0 && videoHeight > 0) {
-                    videoWidth to videoHeight
-                } else {
-                    viewWidth to viewHeight
-                }
-                else -> imageWidth to imageHeight
-            }
-            if (contentWidth > 0 && contentHeight > 0) {
-                drawQuad(viewWidth, viewHeight, contentWidth, contentHeight)
-            }
-        }
-        EGL14.eglSwapBuffers(display, eglSurface)
-    }
-
-    private fun drawQuad(viewWidth: Int, viewHeight: Int, contentWidth: Int, contentHeight: Int) {
-        // Scale the content to cover (crop) or fit inside (letterbox) the screen, centred.
-        val scaleX = viewWidth.toFloat() / contentWidth
-        val scaleY = viewHeight.toFloat() / contentHeight
-        val scale = if (scaleMode == ScaleMode.CROP) maxOf(scaleX, scaleY) else minOf(scaleX, scaleY)
-        val halfWidth = contentWidth * scale / viewWidth
-        val halfHeight = contentHeight * scale / viewHeight
-
-        vertices.clear()
-        vertices.put(
-            floatArrayOf(
-                // x, y, u, v  (triangle strip: bottom-left, bottom-right, top-left, top-right)
-                -halfWidth, -halfHeight, 0f, 0f,
-                halfWidth, -halfHeight, 1f, 0f,
-                -halfWidth, halfHeight, 0f, 1f,
-                halfWidth, halfHeight, 1f, 1f,
-            )
-        )
-
-        val isVideo = content == Content.VIDEO
-        val program = if (isVideo) videoProgram else imageProgram
-        GLES20.glUseProgram(program)
-
-        val position = GLES20.glGetAttribLocation(program, "aPosition")
-        val texCoord = GLES20.glGetAttribLocation(program, "aTexCoord")
-        vertices.position(0)
-        GLES20.glVertexAttribPointer(position, 2, GLES20.GL_FLOAT, false, 16, vertices)
-        GLES20.glEnableVertexAttribArray(position)
-        vertices.position(2)
-        GLES20.glVertexAttribPointer(texCoord, 2, GLES20.GL_FLOAT, false, 16, vertices)
-        GLES20.glEnableVertexAttribArray(texCoord)
-
-        GLES20.glUniformMatrix4fv(
-            GLES20.glGetUniformLocation(program, "uTexMatrix"), 1, false,
-            if (isVideo) videoMatrix else FLIP_VERTICAL, 0,
-        )
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glBindTexture(
-            if (isVideo) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D,
-            if (isVideo) videoTexture else imageTexture,
-        )
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "sTexture"), 0)
-
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-        GLES20.glDisableVertexAttribArray(position)
-        GLES20.glDisableVertexAttribArray(texCoord)
-    }
-
-    private fun fitToTextureLimit(bitmap: Bitmap): Bitmap {
-        val largest = maxOf(bitmap.width, bitmap.height)
-        if (largest <= maxTextureSize) return bitmap
-        val ratio = maxTextureSize.toFloat() / largest
-        return Bitmap.createScaledBitmap(
-            bitmap,
-            (bitmap.width * ratio).toInt().coerceAtLeast(1),
-            (bitmap.height * ratio).toInt().coerceAtLeast(1),
-            true,
-        )
     }
 
     private fun tearDown() {
+        if (frameScheduled) choreographer.removeFrameCallback(frameCallback)
         if (::surfaceTexture.isInitialized) {
             surfaceTexture.setOnFrameAvailableListener(null)
             videoSurface.release()
@@ -338,6 +527,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             GLES20.glDeleteTextures(2, intArrayOf(videoTexture, imageTexture), 0)
             GLES20.glDeleteProgram(videoProgram)
             GLES20.glDeleteProgram(imageProgram)
+            snapshot.delete()
+            spare.delete()
         }
         if (display != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
@@ -377,14 +568,63 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         return error
     }
 
+    /** A texture-backed framebuffer the size of the screen. */
+    private class OffscreenFrame {
+        var texture = 0
+            private set
+        var framebuffer = 0
+            private set
+        private var width = 0
+        private var height = 0
+
+        fun ensureSize(newWidth: Int, newHeight: Int) {
+            if (texture != 0 && width == newWidth && height == newHeight) return
+            delete()
+            width = newWidth
+            height = newHeight
+            texture = createTexture(GLES20.GL_TEXTURE_2D)
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null,
+            )
+            val ids = IntArray(1)
+            GLES20.glGenFramebuffers(1, ids, 0)
+            framebuffer = ids[0]
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+            GLES20.glFramebufferTexture2D(
+                GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, texture, 0,
+            )
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        }
+
+        fun swapWith(other: OffscreenFrame) {
+            val texture = this.texture
+            val framebuffer = this.framebuffer
+            this.texture = other.texture
+            this.framebuffer = other.framebuffer
+            other.texture = texture
+            other.framebuffer = framebuffer
+        }
+
+        fun delete() {
+            if (framebuffer != 0) GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
+            if (texture != 0) GLES20.glDeleteTextures(1, intArrayOf(texture), 0)
+            framebuffer = 0
+            texture = 0
+        }
+    }
+
     private companion object {
         const val TAG = "SlideshowRenderer"
         const val MAX_PENDING_IMAGES = 3
+        const val NOT_TRANSITIONING = -1L
 
         // Background shown when there is nothing to play (matches the app icon).
         const val EMPTY_RED = 0x1E / 255f
         const val EMPTY_GREEN = 0x2A / 255f
         const val EMPTY_BLUE = 0x4A / 255f
+
+        val IDENTITY = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
 
         /** Bitmaps are stored top row first, while GL texture coordinates start at the bottom. */
         val FLIP_VERTICAL = floatArrayOf(
@@ -410,8 +650,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             precision mediump float;
             varying vec2 vTexCoord;
             uniform samplerExternalOES sTexture;
+            uniform float uAlpha;
             void main() {
-                gl_FragColor = texture2D(sTexture, vTexCoord);
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha);
             }
         """
 
@@ -419,8 +660,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             precision mediump float;
             varying vec2 vTexCoord;
             uniform sampler2D sTexture;
+            uniform float uAlpha;
             void main() {
-                gl_FragColor = texture2D(sTexture, vTexCoord);
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha);
             }
         """
 

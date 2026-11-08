@@ -14,6 +14,7 @@ will loop one after another behind your home screen (and lock screen, on most ph
 - **Fit to screen:** fill the screen by cropping, or show the whole photo/video with black bars.
 - **Sound:** off by default; turn it on if you want the videos' audio.
 - **Video speed:** 0.5× to 2×.
+- **Transitions:** crossfade, fade to black, zoom, slide, or none, lasting 0.3 to 2 seconds.
 - **Battery friendly:** playback pauses when the wallpaper isn't visible (an app is open or the screen is off), audio isn't decoded while muted, and large photos are decoded at a reduced size.
 - **Robust:** items that are deleted or can't be opened are skipped automatically.
 
@@ -51,7 +52,6 @@ To change the slideshow later, open the app again (or the wallpaper's *Settings*
 
 - Some phone makers (for example Samsung) only allow live wallpapers on the home screen.
 - Very high-resolution videos (4K and above) use more battery; 1080p is plenty for a background.
-- Items switch with a straight cut; crossfade transitions are not implemented yet.
 - Supported photo formats: JPEG, PNG, WebP, BMP, HEIF/HEIC and AVIF (as supported by the phone).
 
 ## How it works
@@ -59,7 +59,7 @@ To change the slideshow later, open the app again (or the wallpaper's *Settings*
 | Part | File |
 | --- | --- |
 | Live wallpaper (sequences the playlist with Media3 ExoPlayer) | `app/src/main/java/com/sadikbr/videowallpaper/wallpaper/VideoWallpaperService.kt` |
-| OpenGL renderer (draws video frames and photos, crop/fit) | `app/src/main/java/com/sadikbr/videowallpaper/wallpaper/SlideshowRenderer.kt` |
+| OpenGL renderer (draws video frames and photos, crop/fit, transitions) | `app/src/main/java/com/sadikbr/videowallpaper/wallpaper/SlideshowRenderer.kt` |
 | Settings storage (DataStore, shared with the wallpaper) | `app/src/main/java/com/sadikbr/videowallpaper/data/SettingsRepository.kt` |
 | Settings screen (Jetpack Compose) | `app/src/main/java/com/sadikbr/videowallpaper/ui/SettingsScreen.kt` |
 

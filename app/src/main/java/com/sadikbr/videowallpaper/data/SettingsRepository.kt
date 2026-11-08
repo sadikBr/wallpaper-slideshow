@@ -36,6 +36,10 @@ class SettingsRepository(context: Context) {
                     ?: ScaleMode.CROP,
                 muted = prefs[Keys.MUTED] ?: true,
                 speed = prefs[Keys.SPEED] ?: 1f,
+                transition = prefs[Keys.TRANSITION]
+                    ?.let { name -> TransitionStyle.entries.firstOrNull { it.name == name } }
+                    ?: TransitionStyle.CROSSFADE,
+                transitionMs = prefs[Keys.TRANSITION_MS] ?: WallpaperSettings.DEFAULT_TRANSITION_MS,
             )
         }
         .distinctUntilChanged()
@@ -58,6 +62,10 @@ class SettingsRepository(context: Context) {
 
     suspend fun setSpeed(value: Float) = dataStore.edit { it[Keys.SPEED] = value }
 
+    suspend fun setTransition(value: TransitionStyle) = dataStore.edit { it[Keys.TRANSITION] = value.name }
+
+    suspend fun setTransitionMs(value: Int) = dataStore.edit { it[Keys.TRANSITION_MS] = value }
+
     private object Keys {
         // Holds photos too; the key name is kept so existing lists survive the update.
         val MEDIA = stringPreferencesKey("videos")
@@ -67,6 +75,8 @@ class SettingsRepository(context: Context) {
         val SCALE_MODE = stringPreferencesKey("scale_mode")
         val MUTED = booleanPreferencesKey("muted")
         val SPEED = floatPreferencesKey("speed")
+        val TRANSITION = stringPreferencesKey("transition")
+        val TRANSITION_MS = intPreferencesKey("transition_ms")
     }
 
     private companion object {

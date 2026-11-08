@@ -153,6 +153,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     onImageSecondsChange = viewModel::setImageSeconds,
                     onSpeedChange = viewModel::setSpeed,
                     onScaleModeChange = viewModel::setScaleMode,
+                    onTransitionChange = viewModel::setTransition,
+                    onTransitionMsChange = viewModel::setTransitionMs,
                 )
             }
         }

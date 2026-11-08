@@ -11,7 +11,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.VideoSize
+import androidx.media3.common.Format
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BitmapUtil
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -20,6 +20,8 @@ import androidx.media3.exoplayer.image.BitmapFactoryImageDecoder
 import androidx.media3.exoplayer.image.ImageDecoder
 import androidx.media3.exoplayer.image.ImageDecoderException
 import androidx.media3.exoplayer.image.ImageOutput
+import androidx.media3.exoplayer.video.VideoFrameMetadataListener
+import android.media.MediaFormat
 import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.SettingsRepository
 import com.sadikbr.videowallpaper.data.WallpaperSettings
@@ -112,6 +114,7 @@ class VideoWallpaperService : WallpaperService() {
             val activeRenderer = renderer ?: return
 
             activeRenderer.setScaleMode(current.scaleMode)
+            activeRenderer.setTransition(current.transition, current.transitionMs)
             if (current.media.isEmpty()) {
                 releasePlayer()
                 activeRenderer.showEmpty()
@@ -149,6 +152,7 @@ class VideoWallpaperService : WallpaperService() {
 
                 override fun onDisabled() = Unit
             })
+            exoPlayer.setVideoFrameMetadataListener(VideoItemStartDetector(target))
             exoPlayer.addListener(SlideshowListener(exoPlayer, target))
 
             exoPlayer.repeatMode = Player.REPEAT_MODE_ALL
@@ -211,15 +215,6 @@ class VideoWallpaperService : WallpaperService() {
                 }
             }
 
-            override fun onVideoSizeChanged(videoSize: VideoSize) {
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    target.setVideoSize(
-                        (videoSize.width * videoSize.pixelWidthHeightRatio).roundToInt(),
-                        videoSize.height,
-                    )
-                }
-            }
-
             /** Skips items that can't be played (deleted, unsupported, or access revoked). */
             override fun onPlayerError(error: PlaybackException) {
                 if (exoPlayer !== player) return
@@ -242,6 +237,39 @@ class VideoWallpaperService : WallpaperService() {
                     exoPlayer.prepare()
                 }
             }
+        }
+    }
+
+    /**
+     * Spots the first frame of each new video item, on the player's thread just before that
+     * frame is shown, so the renderer can start a transition exactly on it.
+     *
+     * Frame times are relative to their own item, so they jump back (to about zero) when a new
+     * item starts; a new [Format] object also marks a new item.
+     */
+    @OptIn(UnstableApi::class)
+    private class VideoItemStartDetector(private val target: SlideshowRenderer) : VideoFrameMetadataListener {
+        private var lastPresentationTimeUs = C.TIME_UNSET
+        private var lastFormat: Format? = null
+
+        override fun onVideoFrameAboutToBeRendered(
+            presentationTimeUs: Long,
+            releaseTimeNs: Long,
+            format: Format,
+            mediaFormat: MediaFormat?,
+        ) {
+            val isNewItem = lastPresentationTimeUs == C.TIME_UNSET ||
+                presentationTimeUs < lastPresentationTimeUs ||
+                format !== lastFormat
+            lastPresentationTimeUs = presentationTimeUs
+            lastFormat = format
+            if (!isNewItem) return
+
+            // The decoder rotates the picture itself, so swap the sides for portrait videos.
+            val rotated = format.rotationDegrees == 90 || format.rotationDegrees == 270
+            val width = ((if (rotated) format.height else format.width) * format.pixelWidthHeightRatio).roundToInt()
+            val height = if (rotated) format.width else format.height
+            target.onVideoItemStarting(width, height)
         }
     }
 

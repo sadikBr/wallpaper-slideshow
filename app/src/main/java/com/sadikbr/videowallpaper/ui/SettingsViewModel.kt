@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.SettingsRepository
+import com.sadikbr.videowallpaper.data.TransitionStyle
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,6 +61,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setScaleMode(value: ScaleMode) = launch { repository.setScaleMode(value) }
     fun setMuted(value: Boolean) = launch { repository.setMuted(value) }
     fun setSpeed(value: Float) = launch { repository.setSpeed(value) }
+    fun setTransition(value: TransitionStyle) = launch { repository.setTransition(value) }
+    fun setTransitionMs(value: Int) = launch { repository.setTransitionMs(value) }
 
     private fun editMedia(transform: (List<String>) -> List<String>) = launch {
         repository.updateMedia(transform)
