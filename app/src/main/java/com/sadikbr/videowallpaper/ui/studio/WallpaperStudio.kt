@@ -61,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -87,6 +88,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -103,6 +105,7 @@ import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TimeFormat
 import com.sadikbr.videowallpaper.data.WallpaperLook
 import com.sadikbr.videowallpaper.data.WallpaperSettings
+import com.sadikbr.videowallpaper.data.SignatureFont
 import com.sadikbr.videowallpaper.data.WidgetData
 import com.sadikbr.videowallpaper.data.WidgetSettings
 import com.sadikbr.videowallpaper.data.WidgetSnapshot
@@ -1010,34 +1013,125 @@ private fun WidgetsPanel(widgets: WidgetSettings, onChange: (WidgetSettings) -> 
     }
 
     if (editingSignature) {
-        var text by remember { mutableStateOf(widgets.signature) }
-        AlertDialog(
-            onDismissRequest = { editingSignature = false },
-            title = { Text("Signature") },
-            text = {
-                Column {
-                    Text(
-                        "A line of your own text, in a handwriting font. Leave it empty for none.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { if (it.length <= 40) text = it },
-                        singleLine = true,
-                        placeholder = { Text("e.g. your name") },
-                    )
+        SignatureDialog(
+            widgets = widgets,
+            onSave = {
+                onChange(it)
+                editingSignature = false
+            },
+            onDismiss = { editingSignature = false },
+        )
+    }
+}
+
+/**
+ * Edits the signature line: its text (Arabic or Latin), font and size, with a live preview.
+ * Without a chosen font, Arabic text gets the Ruqaa calligraphy font and Latin text the script one.
+ */
+@Composable
+private fun SignatureDialog(widgets: WidgetSettings, onSave: (WidgetSettings) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(widgets.signature) }
+    var chosenFont by remember { mutableStateOf(widgets.signatureFont) }
+    var size by remember { mutableFloatStateOf(widgets.signatureSize) }
+    val draft = widgets.copy(signature = text, signatureFont = chosenFont, signatureSize = size)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Signature") },
+        text = {
+            SignatureEditor(
+                draft = draft,
+                onTextChange = { if (it.length <= 40) text = it },
+                onFontChange = { chosenFont = it },
+                onSizeChange = { size = it },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(draft.copy(signature = text.trim())) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/** The signature's text field, live preview, font choice and size (the dialog's content). */
+@Composable
+internal fun SignatureEditor(
+    draft: WidgetSettings,
+    onTextChange: (String) -> Unit,
+    onFontChange: (SignatureFont) -> Unit,
+    onSizeChange: (Float) -> Unit,
+) {
+    val context = LocalContext.current
+    val font = draft.resolvedSignatureFont
+    val family = remember(font) { FontFamily(ComposeTypeface(ClockFonts.signature(context, draft))) }
+    Column {
+        Text(
+            "A line of your own text, in Arabic or English. Leave it empty for none.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = draft.signature,
+            onValueChange = onTextChange,
+            singleLine = true,
+            placeholder = { Text("e.g. your name") },
+            // Arabic text flows right to left as it is typed.
+            textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(12.dp))
+        // Live preview, on a dark backdrop like the wallpaper.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(84.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF1B1838)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                draft.signature.ifBlank { if (font == SignatureFont.SCRIPT) "Your name" else "توقيعك" },
+                fontFamily = family,
+                fontSize = (26 * draft.signatureSize).sp,
+                color = Color.White.copy(alpha = if (draft.signature.isBlank()) 0.4f else 1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content),
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Font", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SignatureFont.entries.forEach { option ->
+                val optionFamily = remember(option) {
+                    FontFamily(ComposeTypeface(ClockFonts.signature(context, WidgetSettings(signatureFont = option))))
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onChange(widgets.copy(signature = text.trim()))
-                    editingSignature = false
-                }) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingSignature = false }) { Text("Cancel") }
-            },
+                val selected = option == font
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selected) Brand.Coral else TileColor)
+                        .clickable(role = Role.RadioButton) { onFontChange(option) }
+                        .semantics { this.selected = selected }
+                        .padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(option.sample, fontFamily = optionFamily, fontSize = 22.sp, color = Color.White)
+                    Text(option.label, style = MaterialTheme.typography.labelSmall, color = Color.White)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Size", style = MaterialTheme.typography.labelMedium)
+        Slider(
+            value = draft.signatureSize,
+            onValueChange = onSizeChange,
+            valueRange = WidgetSettings.MIN_SIGNATURE_SIZE..WidgetSettings.MAX_SIGNATURE_SIZE,
+            colors = SliderDefaults.colors(thumbColor = Brand.Coral, activeTrackColor = Brand.Coral),
         )
     }
 }

@@ -26,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sadikbr.videowallpaper.data.WidgetData
 import com.sadikbr.videowallpaper.ui.home.HomeActions
 import com.sadikbr.videowallpaper.ui.home.HomeScreen
+import com.sadikbr.videowallpaper.ui.home.HomeScreenSheet
 import com.sadikbr.videowallpaper.ui.home.HomeState
 import com.sadikbr.videowallpaper.ui.home.SlideshowSheet
 import com.sadikbr.videowallpaper.ui.home.LockClockGuideSheet
@@ -60,6 +61,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     /** The item the editor is open for ("" = no particular one), or null when closed. */
     var studioFor by remember { mutableStateOf<String?>(null) }
     var slideshowSheet by remember { mutableStateOf(false) }
+    var homeScreenSheet by remember { mutableStateOf(false) }
 
     val pickMedia = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -122,6 +124,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             builtInUri = viewModel::builtInUri,
             onToggleBuiltIn = viewModel::toggleBuiltIn,
             onOpenLockClockGuide = { lockClockGuide = true },
+            onOpenHomeScreenSettings = { homeScreenSheet = true },
         ),
         loader = viewModel.mediaInfoLoader,
     )
@@ -136,6 +139,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 lockClockGuide = false
             },
             onLater = { lockClockGuide = false },
+        )
+    }
+
+    if (homeScreenSheet) {
+        HomeScreenSheet(
+            settings = current,
+            uri = current.media.firstOrNull(),
+            loader = viewModel.mediaInfoLoader,
+            depthStates = depthStates,
+            widgetSnapshot = widgetSnapshot,
+            systemUses24Hour = viewModel.systemUses24Hour(),
+            onChange = viewModel::setHomeScreen,
+            onDismiss = { homeScreenSheet = false },
         )
     }
 

@@ -47,6 +47,13 @@ class SettingsRepository(context: Context) {
                 photoFramings = decodeFramings(prefs[Keys.PHOTO_FRAMINGS]),
                 widgets = readWidgets(prefs),
                 lockClockGuideDone = prefs[Keys.LOCK_CLOCK_GUIDE_DONE] ?: false,
+                home = HomeScreenSettings(
+                    showClock = prefs[Keys.HOME_SHOW_CLOCK] ?: false,
+                    showWidgets = prefs[Keys.HOME_SHOW_WIDGETS] ?: false,
+                    effect = prefs[Keys.HOME_EFFECT]
+                        ?.let { name -> HomeEffect.entries.firstOrNull { it.name == name } }
+                        ?: HomeEffect.NONE,
+                ),
                 itemLooks = decodeLooks(prefs[Keys.ITEM_LOOKS], WallpaperLook(readClock(prefs), readWidgets(prefs))),
             )
         }
@@ -133,12 +140,20 @@ class SettingsRepository(context: Context) {
         prefs[Keys.WIDGET_BATTERY] = updated.battery
         prefs[Keys.WIDGET_CALENDAR] = updated.calendar
         prefs[Keys.WIDGET_SIGNATURE] = updated.signature
+        prefs[Keys.WIDGET_SIGNATURE_SIZE] = updated.signatureSize
+        if (updated.signatureFont == null) prefs.remove(Keys.WIDGET_SIGNATURE_FONT) else prefs[Keys.WIDGET_SIGNATURE_FONT] = updated.signatureFont.name
         prefs[Keys.WIDGET_STYLE] = updated.style.name
         if (updated.position == null) prefs.remove(Keys.WIDGET_POSITION) else prefs[Keys.WIDGET_POSITION] = updated.position
         when (updated.fahrenheit) {
             null -> prefs.remove(Keys.WIDGET_FAHRENHEIT)
             else -> prefs[Keys.WIDGET_FAHRENHEIT] = updated.fahrenheit
         }
+    }
+
+    suspend fun setHomeScreen(home: HomeScreenSettings) = dataStore.edit {
+        it[Keys.HOME_SHOW_CLOCK] = home.showClock
+        it[Keys.HOME_SHOW_WIDGETS] = home.showWidgets
+        it[Keys.HOME_EFFECT] = home.effect.name
     }
 
     suspend fun setLockClockGuideDone(done: Boolean) = dataStore.edit { it[Keys.LOCK_CLOCK_GUIDE_DONE] = done }
@@ -181,6 +196,8 @@ class SettingsRepository(context: Context) {
         battery = prefs[Keys.WIDGET_BATTERY] ?: false,
         calendar = prefs[Keys.WIDGET_CALENDAR] ?: false,
         signature = prefs[Keys.WIDGET_SIGNATURE] ?: "",
+        signatureFont = prefs[Keys.WIDGET_SIGNATURE_FONT]?.let { name -> SignatureFont.entries.firstOrNull { it.name == name } },
+        signatureSize = prefs[Keys.WIDGET_SIGNATURE_SIZE] ?: 1f,
         style = enumOrDefault(prefs[Keys.WIDGET_STYLE], WidgetStyle.GLASS),
         position = prefs[Keys.WIDGET_POSITION],
         fahrenheit = prefs[Keys.WIDGET_FAHRENHEIT],
@@ -246,11 +263,16 @@ class SettingsRepository(context: Context) {
         val WIDGET_BATTERY = booleanPreferencesKey("widget_battery")
         val WIDGET_CALENDAR = booleanPreferencesKey("widget_calendar")
         val WIDGET_SIGNATURE = stringPreferencesKey("widget_signature")
+        val WIDGET_SIGNATURE_FONT = stringPreferencesKey("widget_signature_font")
+        val WIDGET_SIGNATURE_SIZE = floatPreferencesKey("widget_signature_size")
         val WIDGET_STYLE = stringPreferencesKey("widget_style")
         val WIDGET_POSITION = floatPreferencesKey("widget_position")
         val WIDGET_FAHRENHEIT = booleanPreferencesKey("widget_fahrenheit")
         val ITEM_LOOKS = stringPreferencesKey("item_looks")
         val LOCK_CLOCK_GUIDE_DONE = booleanPreferencesKey("lock_clock_guide_done")
+        val HOME_SHOW_CLOCK = booleanPreferencesKey("home_show_clock")
+        val HOME_SHOW_WIDGETS = booleanPreferencesKey("home_show_widgets")
+        val HOME_EFFECT = stringPreferencesKey("home_effect")
     }
 
     private companion object {

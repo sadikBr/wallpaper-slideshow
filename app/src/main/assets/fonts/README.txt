@@ -6,3 +6,5 @@ packages to TTF). All are licensed under the SIL Open Font License 1.1 (see OFL.
 - Bebas Neue (Regular)            Copyright 2019 The Bebas Neue Project Authors
 - Big Shoulders Display (Thin)    Copyright Google Inc. and the Big Shoulders Project Authors
 - Great Vibes (Regular)            Copyright 2010 The Great Vibes Pro Project Authors
+- Aref Ruqaa (Bold)               Copyright 2015-2021 The Aref Ruqaa Project Authors (Arabic and Latin subsets merged)
+- Reem Kufi (Regular)             Copyright 2015-2022 The Reem Kufi Project Authors (Arabic and Latin subsets merged)

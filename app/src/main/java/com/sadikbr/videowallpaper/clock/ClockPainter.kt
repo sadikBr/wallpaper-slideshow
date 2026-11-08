@@ -12,6 +12,8 @@ import android.graphics.Typeface
 import android.text.format.DateFormat
 import com.sadikbr.videowallpaper.data.ClockFont
 import com.sadikbr.videowallpaper.data.ClockSettings
+import com.sadikbr.videowallpaper.data.SignatureFont
+import com.sadikbr.videowallpaper.data.WidgetSettings
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -188,13 +190,17 @@ class ClockLayout internal constructor(
 /** Loads the clock typefaces once per process. */
 object ClockFonts {
     private val cache = HashMap<ClockFont, Typeface>()
-    private var signature: Typeface? = null
+    private val signatures = HashMap<SignatureFont, Typeface>()
 
-    /** The handwriting font for the widgets' signature line (Great Vibes, SIL OFL). */
+    /** The font for the widgets' signature line (chosen, or picked from the text). */
     @Synchronized
-    fun signature(context: Context): Typeface = signature ?: runCatching {
-        Typeface.createFromAsset(context.applicationContext.assets, "fonts/great_vibes.ttf")
-    }.getOrDefault(Typeface.SERIF).also { signature = it }
+    fun signature(context: Context, widgets: WidgetSettings): Typeface {
+        val font = widgets.resolvedSignatureFont
+        return signatures.getOrPut(font) {
+            runCatching { Typeface.createFromAsset(context.applicationContext.assets, font.asset) }
+                .getOrDefault(Typeface.SERIF)
+        }
+    }
 
     @Synchronized
     fun typeface(context: Context, font: ClockFont): Typeface = cache.getOrPut(font) {

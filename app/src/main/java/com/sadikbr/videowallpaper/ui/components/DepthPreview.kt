@@ -117,7 +117,7 @@ fun DepthPreview(
                 val layout = WidgetPainter.layout(
                     widgets, widgetSnapshot, use24Hour,
                     if (clock.enabled) clock.color else android.graphics.Color.WHITE,
-                    ClockFonts.signature(context), width.toInt(), height.toInt(), clockBottom, widgetPlaceholders,
+                    ClockFonts.signature(context, widgets), width.toInt(), height.toInt(), clockBottom, widgetPlaceholders,
                 ) ?: return null
                 drawIntoCanvas { layout.draw(it.nativeCanvas) }
                 return layout

@@ -1,6 +1,13 @@
 package com.sadikbr.videowallpaper.wallpaper
 
+import android.app.KeyguardManager
+import android.app.WallpaperManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.net.Uri
 import android.service.wallpaper.WallpaperService
@@ -93,9 +100,40 @@ class VideoWallpaperService : WallpaperService() {
         private var retryDelayMs = FIRST_RETRY_DELAY_MS
         private var consecutiveErrors = 0
 
+        /** Whether the home screen (not the lock screen) is in front of the wallpaper. */
+        private var onHomeScreen = false
+
+        /** Follows locking and unlocking, so the home screen can look different. */
+        private val lockReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    // Show the lock screen look before the screen comes back on.
+                    Intent.ACTION_SCREEN_OFF -> updateHomeState(animate = false, locked = true)
+                    // Unlocked: fade over to the home screen look.
+                    Intent.ACTION_USER_PRESENT -> updateHomeState(animate = true, locked = false)
+                    // Back on without the lock screen (e.g. soon after it went off).
+                    Intent.ACTION_SCREEN_ON -> updateHomeState(animate = true)
+                }
+            }
+        }
+        private var lockReceiverRegistered = false
+
         override fun onCreate(holder: SurfaceHolder) {
             super.onCreate(holder)
             setTouchEventsEnabled(false)
+            if (!isPreview) {
+                val filter = IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_USER_PRESENT)
+                }
+                // System broadcasts (still delivered to a non-exported receiver).
+                ContextCompat.registerReceiver(
+                    this@VideoWallpaperService, lockReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED,
+                )
+                lockReceiverRegistered = true
+            }
+            onHomeScreen = isHomeScreenNow()
             scope.launch {
                 repository.settings.collect { newSettings ->
                     val clockWasEnabled = settings?.lookFor(currentUri)?.clock?.enabled == true
@@ -143,9 +181,15 @@ class VideoWallpaperService : WallpaperService() {
             super.onSurfaceDestroyed(holder)
         }
 
+        override fun onWallpaperFlagsChanged(which: Int) {
+            super.onWallpaperFlagsChanged(which)
+            updateHomeState(animate = false)
+        }
+
         override fun onVisibilityChanged(visible: Boolean) {
             isEngineVisible = visible
             if (visible) {
+                updateHomeState(animate = false)
                 settings?.let(::refreshWidgetData)
                 idleReleaseJob?.cancel()
                 val existing = player
@@ -171,6 +215,10 @@ class VideoWallpaperService : WallpaperService() {
         }
 
         override fun onDestroy() {
+            if (lockReceiverRegistered) {
+                runCatching { unregisterReceiver(lockReceiver) }
+                lockReceiverRegistered = false
+            }
             scope.cancel() // Also stops pending idle-release and retry jobs.
             activationExecutor.shutdown()
             releasePlayer()
@@ -179,12 +227,40 @@ class VideoWallpaperService : WallpaperService() {
             super.onDestroy()
         }
 
+        /**
+         * Whether this wallpaper is behind the home screen rather than the lock screen. A preview
+         * always shows the full (lock screen) look; on Android 14+, a wallpaper set for only one
+         * of the two screens always shows that screen's look.
+         */
+        private fun isHomeScreenNow(locked: Boolean? = null): Boolean {
+            if (isPreview) return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                when (wallpaperFlags) {
+                    WallpaperManager.FLAG_LOCK -> return false
+                    WallpaperManager.FLAG_SYSTEM -> return true
+                }
+            }
+            val keyguardLocked = locked
+                ?: getSystemService(KeyguardManager::class.java)?.isKeyguardLocked
+                ?: false
+            return !keyguardLocked
+        }
+
+        private fun updateHomeState(animate: Boolean, locked: Boolean? = null) {
+            val home = isHomeScreenNow(locked)
+            if (home == onHomeScreen) return
+            onHomeScreen = home
+            val current = settings ?: return
+            renderer?.setHomeState(current.home, home, animate)
+        }
+
         /** Brings the player and renderer in line with the current settings. */
         private fun refresh() {
             val current = settings ?: return
             val activeRenderer = renderer ?: return
 
             activeRenderer.setScaleMode(current.scaleMode)
+            activeRenderer.setHomeState(current.home, onHomeScreen, animate = false)
             activeRenderer.setTransition(current.transition, current.transitionMs)
             // The look of what's on screen (each item can have its own; edits apply right away).
             activeRenderer.setCurrentLook(renderLook(current, currentUri))
@@ -285,7 +361,7 @@ class VideoWallpaperService : WallpaperService() {
                     settings = it,
                     use24Hour = clock?.use24Hour ?: DateFormat.is24HourFormat(this@VideoWallpaperService),
                     color = if (look.clock.enabled) look.clock.color else android.graphics.Color.WHITE,
-                    signatureTypeface = ClockFonts.signature(this@VideoWallpaperService),
+                    signatureTypeface = ClockFonts.signature(this@VideoWallpaperService, it),
                 )
             }
             return RenderLook(clock, widgets)

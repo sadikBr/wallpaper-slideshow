@@ -31,6 +31,8 @@ import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.PhotoFraming
 import com.sadikbr.videowallpaper.data.VideoMaskSequence
 import com.sadikbr.videowallpaper.data.WidgetSettings
+import com.sadikbr.videowallpaper.data.HomeEffect
+import com.sadikbr.videowallpaper.data.HomeScreenSettings
 import com.sadikbr.videowallpaper.data.WidgetSnapshot
 import com.sadikbr.videowallpaper.clock.WidgetLayout
 import com.sadikbr.videowallpaper.clock.WidgetPainter
@@ -149,6 +151,15 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     // Two offscreen frames: the snapshot being faded out, and a spare to capture the next one.
     private val snapshot = OffscreenFrame()
     private val spare = OffscreenFrame()
+
+    // Home screen look: 0 = lock screen (full look), 1 = home screen, animated in between.
+    private var homeStyle = HomeScreenSettings()
+    private var homeFrom = 0f
+    private var homeTo = 0f
+    private var homeStartNs = 0L
+    private var blurProgram = 0
+    private val blurA = OffscreenFrame()
+    private val blurB = OffscreenFrame()
 
     // Clock and depth effect.
     private var clockStyle: ClockStyle? = null
@@ -365,6 +376,21 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         drawUnlessAnimating()
     }
 
+    /**
+     * Whether the wallpaper is now behind the home screen (unlocked) or the lock screen, and how
+     * the home screen differs. With [animate], the change fades in, e.g. right after unlocking.
+     */
+    fun setHomeState(style: HomeScreenSettings, onHomeScreen: Boolean, animate: Boolean) = post {
+        val target = if (onHomeScreen) 1f else 0f
+        val styleChanged = style != homeStyle
+        homeStyle = style
+        if (target == homeTo && !styleChanged) return@post
+        homeFrom = if (animate) homeAmount() else target
+        homeTo = target
+        homeStartNs = System.nanoTime()
+        if (animate && homeFrom != homeTo) scheduleTransitionFrame() else drawUnlessAnimating()
+    }
+
     /** Draws the current content again, e.g. after the surface changed size. */
     fun redraw() = post { draw() }
 
@@ -450,6 +476,17 @@ internal class SlideshowRenderer(windowSurface: Surface) {
 
     private val isTransitioning get() = transitionStartNs != NOT_TRANSITIONING
 
+    private val isHomeAnimating get() = homeFrom != homeTo && System.nanoTime() - homeStartNs < HOME_ANIMATION_NS
+
+    private val isAnimating get() = isTransitioning || isHomeAnimating
+
+    /** 0 on the lock screen, 1 on the home screen, eased in between. */
+    private fun homeAmount(): Float {
+        val linear = ((System.nanoTime() - homeStartNs).toFloat() / HOME_ANIMATION_NS).coerceIn(0f, 1f)
+        val eased = linear * linear * (3f - 2f * linear)
+        return homeFrom + (homeTo - homeFrom) * eased
+    }
+
     /** Freezes what is on screen now, and starts animating from it to whatever comes next. */
     private fun beginTransition() {
         if (transitionStyle == TransitionStyle.NONE || transitionMs <= 0) {
@@ -479,9 +516,12 @@ internal class SlideshowRenderer(windowSurface: Surface) {
 
     private fun onTransitionFrame() {
         frameScheduled = false
-        if (released || !isTransitioning) return
+        if (released || !isAnimating) {
+            if (!released) draw() // The last frame of the home screen animation.
+            return
+        }
         draw()
-        if (isTransitioning) scheduleTransitionFrame()
+        if (isAnimating) scheduleTransitionFrame()
     }
 
     /** 0 → 1 over the transition, eased; 1 when no transition is running. */
@@ -497,7 +537,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
 
     private fun drawUnlessAnimating() {
         // While a transition runs, the frame callback redraws on every display refresh.
-        if (!isTransitioning) draw()
+        if (!isAnimating) draw()
     }
 
     private fun draw() {
@@ -563,6 +603,13 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
         val hasContent = content != Content.EMPTY && contentWidth > 0 && contentHeight > 0
         val style = clockStyle
+        val home = homeAmount()
+        val blur = if (homeStyle.effect == HomeEffect.BLUR) home else 0f
+        val dim = home * when (homeStyle.effect) {
+            HomeEffect.NONE -> 0f
+            HomeEffect.DIM -> HOME_DIM
+            HomeEffect.BLUR -> HOME_BLUR_DIM
+        }
         val arrangement = arrangement(style, viewWidth, viewHeight)
 
         // Where the content goes, in normalised device coordinates (scaled, then reframed).
@@ -577,25 +624,41 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             centerY = -2f * arrangement.framing.shiftY / viewHeight
             centerX = offsetX + 2f * arrangement.framing.shiftX / viewWidth
             val isVideo = content == Content.VIDEO
-            drawQuad(
-                program = if (isVideo) videoProgram else imageProgram,
-                textureTarget = if (isVideo) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D,
-                texture = if (isVideo) videoTexture else imageTexture,
-                texMatrix = if (isVideo) videoMatrix else FLIP_VERTICAL,
-                left = centerX - halfWidth,
-                right = centerX + halfWidth,
-                bottom = centerY - halfHeight,
-                top = centerY + halfHeight,
-                alpha = alpha,
-            )
+            val left = centerX - halfWidth
+            val right = centerX + halfWidth
+            val bottom = centerY - halfHeight
+            val top = centerY + halfHeight
+            val drawPicture = { a: Float, d: Float ->
+                drawQuad(
+                    program = if (isVideo) videoProgram else imageProgram,
+                    textureTarget = if (isVideo) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D,
+                    texture = if (isVideo) videoTexture else imageTexture,
+                    texMatrix = if (isVideo) videoMatrix else FLIP_VERTICAL,
+                    left = left,
+                    right = right,
+                    bottom = bottom,
+                    top = top,
+                    alpha = a,
+                    dim = d,
+                )
+            }
+            drawPicture(alpha, dim)
+            if (blur > 0f) drawBlurred(viewWidth, viewHeight, alpha * blur, dim) { drawPicture(1f, 0f) }
         }
 
-        if (style == null) {
-            drawWidgets(viewWidth, viewHeight, clockBottom = null, alpha, offsetX)
+        // On the home screen, the clock and widgets may fade away.
+        val clockAlpha = alpha * (if (homeStyle.showClock) 1f else 1f - home)
+        val widgetAlpha = alpha * (if (homeStyle.showWidgets) 1f else 1f - home)
+        // A blurred picture has no sharp subject to stand in front of the time.
+        val subjectAlpha = alpha * (1f - blur)
+        if (style == null || clockAlpha <= 0f) {
+            drawWidgets(viewWidth, viewHeight, clockBottom = style?.let {
+                ensureClock(it, viewWidth, viewHeight, arrangement.clockOffset).timeRect.bottom
+            }, widgetAlpha, offsetX)
             return
         }
         val layout = ensureClock(style, viewWidth, viewHeight, arrangement.clockOffset)
-        drawClockPart(timeTexture, layout.timeBounds, viewWidth, viewHeight, alpha, offsetX)
+        drawClockPart(timeTexture, layout.timeBounds, viewWidth, viewHeight, clockAlpha, offsetX)
 
         if (hasContent && content == Content.IMAGE) {
             val photoCenterX = centerX - offsetX
@@ -605,7 +668,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
                 viewWidth / 2f * (1f + photoCenterX + halfWidth),
                 viewHeight / 2f * (1f - centerY + halfHeight),
             )
-            if (isDepthAllowed(layout, photoRect)) {
+            if (isDepthAllowed(layout, photoRect) && subjectAlpha > 0f) {
                 // The subject again, in front of the time: the photo drawn through its cut-out.
                 drawQuad(
                     program = maskedImageProgram,
@@ -616,8 +679,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
                     right = centerX + halfWidth,
                     bottom = centerY - halfHeight,
                     top = centerY + halfHeight,
-                    alpha = alpha,
+                    alpha = subjectAlpha,
                     maskTexture = maskTexture,
+                    dim = dim,
                 )
             }
         }
@@ -629,7 +693,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
                 viewWidth / 2f * (1f + (centerX - offsetX) + halfWidth),
                 viewHeight / 2f * (1f - centerY + halfHeight),
             )
-            if (prepareVideoMask(layout, videoRect)) {
+            if (prepareVideoMask(layout, videoRect) && subjectAlpha > 0f) {
                 // The video's subject in front of the time, through this frame's cut-out.
                 drawQuad(
                     program = maskedVideoProgram,
@@ -640,14 +704,66 @@ internal class SlideshowRenderer(windowSurface: Surface) {
                     right = centerX + halfWidth,
                     bottom = centerY - halfHeight,
                     top = centerY + halfHeight,
-                    alpha = alpha,
+                    alpha = subjectAlpha,
                     maskTexture = videoMaskTexture,
+                    dim = dim,
                 )
             }
         }
 
-        layout.dateBounds?.let { drawClockPart(dateTexture, it, viewWidth, viewHeight, alpha, offsetX) }
-        drawWidgets(viewWidth, viewHeight, layout.timeRect.bottom, alpha, offsetX)
+        layout.dateBounds?.let { drawClockPart(dateTexture, it, viewWidth, viewHeight, clockAlpha, offsetX) }
+        drawWidgets(viewWidth, viewHeight, layout.timeRect.bottom, widgetAlpha, offsetX)
+    }
+
+    /**
+     * Draws a blurred copy of the picture on top: [drawPicture] renders it into a small
+     * offscreen frame, which is blurred there (cheap at that size) and drawn back over the screen.
+     */
+    private fun drawBlurred(viewWidth: Int, viewHeight: Int, alpha: Float, dim: Float, drawPicture: () -> Unit) {
+        if (alpha <= 0f) return
+        val bound = IntArray(1)
+        GLES20.glGetIntegerv(GLES20.GL_FRAMEBUFFER_BINDING, bound, 0)
+        val w = (viewWidth / BLUR_DOWNSCALE).coerceAtLeast(1)
+        val h = (viewHeight / BLUR_DOWNSCALE).coerceAtLeast(1)
+        blurA.ensureSize(w, h)
+        blurB.ensureSize(w, h)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, blurA.framebuffer)
+        GLES20.glViewport(0, 0, w, h)
+        GLES20.glClearColor(0f, 0f, 0f, 0f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        drawPicture()
+        GLES20.glDisable(GLES20.GL_BLEND)
+        repeat(BLUR_PASSES) {
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, blurB.framebuffer)
+            drawFullScreen(blurProgram, blurA.texture, 1f, step = floatArrayOf(BLUR_SPREAD / w, 0f))
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, blurA.framebuffer)
+            drawFullScreen(blurProgram, blurB.texture, 1f, step = floatArrayOf(0f, BLUR_SPREAD / h))
+        }
+        GLES20.glEnable(GLES20.GL_BLEND)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, bound[0])
+        GLES20.glViewport(0, 0, viewWidth, viewHeight)
+        // The blurred frame is premultiplied (transparent where there is no picture).
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        drawFullScreen(blurProgram, blurA.texture, alpha, step = floatArrayOf(0f, 0f), dim = dim)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+    }
+
+    private fun drawFullScreen(program: Int, texture: Int, alpha: Float, step: FloatArray, dim: Float = 0f) {
+        drawQuad(
+            program = program,
+            textureTarget = GLES20.GL_TEXTURE_2D,
+            texture = texture,
+            texMatrix = IDENTITY,
+            left = -1f,
+            right = 1f,
+            bottom = -1f,
+            top = 1f,
+            alpha = alpha,
+            dim = dim,
+            step = step,
+        )
     }
 
     /** The widgets, on top of everything (like iOS widgets, the subject never covers them). */
@@ -866,6 +982,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         top: Float,
         alpha: Float,
         maskTexture: Int = 0,
+        dim: Float = 0f,
+        step: FloatArray? = null,
     ) {
         vertices.clear()
         vertices.put(
@@ -893,6 +1011,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         val maskMatrix = GLES20.glGetUniformLocation(program, "uMaskMatrix")
         if (maskMatrix >= 0) GLES20.glUniformMatrix4fv(maskMatrix, 1, false, FLIP_VERTICAL, 0)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uAlpha"), alpha.coerceIn(0f, 1f))
+        val dimLocation = GLES20.glGetUniformLocation(program, "uDim")
+        if (dimLocation >= 0) GLES20.glUniform1f(dimLocation, dim.coerceIn(0f, 1f))
+        if (step != null) GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uStep"), step[0], step[1])
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(textureTarget, texture)
         GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "sTexture"), 0)
@@ -973,6 +1094,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         maskedVideoProgram = buildProgram(MASKED_VIDEO_VERTEX_SHADER, MASKED_VIDEO_FRAGMENT_SHADER)
         videoMaskTexture = createTexture(GLES20.GL_TEXTURE_2D)
         clockProgram = buildProgram(VERTEX_SHADER, PREMULTIPLIED_FRAGMENT_SHADER)
+        blurProgram = buildProgram(VERTEX_SHADER, BLUR_FRAGMENT_SHADER)
         videoTexture = createTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES)
         imageTexture = createTexture(GLES20.GL_TEXTURE_2D)
         maskTexture = createTexture(GLES20.GL_TEXTURE_2D)
@@ -1004,8 +1126,11 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             GLES20.glDeleteProgram(maskedVideoProgram)
             GLES20.glDeleteTextures(1, intArrayOf(videoMaskTexture), 0)
             GLES20.glDeleteProgram(clockProgram)
+            GLES20.glDeleteProgram(blurProgram)
             snapshot.delete()
             spare.delete()
+            blurA.delete()
+            blurB.delete()
         }
         if (display != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
@@ -1128,8 +1253,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             varying vec2 vTexCoord;
             uniform samplerExternalOES sTexture;
             uniform float uAlpha;
+            uniform float uDim;
             void main() {
-                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha);
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb * (1.0 - uDim), uAlpha);
             }
         """
 
@@ -1138,8 +1264,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             varying vec2 vTexCoord;
             uniform sampler2D sTexture;
             uniform float uAlpha;
+            uniform float uDim;
             void main() {
-                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha);
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb * (1.0 - uDim), uAlpha);
             }
         """
 
@@ -1170,9 +1297,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             uniform samplerExternalOES sTexture;
             uniform sampler2D sMask;
             uniform float uAlpha;
+            uniform float uDim;
             void main() {
                 float subject = texture2D(sMask, vMaskCoord).r;
-                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha * subject);
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb * (1.0 - uDim), uAlpha * subject);
             }
         """
 
@@ -1183,11 +1311,36 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             uniform sampler2D sTexture;
             uniform sampler2D sMask;
             uniform float uAlpha;
+            uniform float uDim;
             void main() {
                 float subject = texture2D(sMask, vTexCoord).r;
-                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha * subject);
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb * (1.0 - uDim), uAlpha * subject);
             }
         """
+
+        /** One direction of a Gaussian blur (premultiplied in and out), with optional dimming. */
+        const val BLUR_FRAGMENT_SHADER = """
+            precision mediump float;
+            varying vec2 vTexCoord;
+            uniform sampler2D sTexture;
+            uniform vec2 uStep;
+            uniform float uAlpha;
+            uniform float uDim;
+            void main() {
+                vec4 c = texture2D(sTexture, vTexCoord) * 0.2270270270;
+                c += (texture2D(sTexture, vTexCoord + uStep * 1.3846153846) + texture2D(sTexture, vTexCoord - uStep * 1.3846153846)) * 0.3162162162;
+                c += (texture2D(sTexture, vTexCoord + uStep * 3.2307692308) + texture2D(sTexture, vTexCoord - uStep * 3.2307692308)) * 0.0702702703;
+                gl_FragColor = vec4(c.rgb * (1.0 - uDim), c.a) * uAlpha;
+            }
+        """
+
+        /** How the home screen animates in after unlocking. */
+        const val HOME_ANIMATION_NS = 450_000_000L
+        const val HOME_DIM = 0.45f
+        const val HOME_BLUR_DIM = 0.15f
+        const val BLUR_DOWNSCALE = 6
+        const val BLUR_PASSES = 2
+        const val BLUR_SPREAD = 1.6f
 
         /** For bitmaps with transparency (the clock), which Android stores premultiplied. */
         const val PREMULTIPLIED_FRAGMENT_SHADER = """

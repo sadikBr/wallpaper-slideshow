@@ -157,6 +157,43 @@ class UiScreenshotTest {
     }
 
     @Test
+    fun signatureArabic() {
+        paparazzi.snapshot {
+            WallpaperSlideshowTheme {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.background(androidx.compose.ui.graphics.Color(0xFF2A2640)).padding(24.dp),
+                ) {
+                    com.sadikbr.videowallpaper.ui.studio.SignatureEditor(
+                        draft = com.sadikbr.videowallpaper.data.WidgetSettings(signature = "صادق إبراهيم", signatureSize = 1.3f),
+                        onTextChange = {}, onFontChange = {}, onSizeChange = {},
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun homeScreenLook() {
+        paparazzi.snapshot {
+            WallpaperSlideshowTheme {
+                androidx.compose.foundation.layout.Box(Modifier.background(androidx.compose.ui.graphics.Color(0xFF15122C))) {
+                    com.sadikbr.videowallpaper.ui.home.HomeScreenContent(
+                        settings = settings.copy(
+                            home = com.sadikbr.videowallpaper.data.HomeScreenSettings(effect = com.sadikbr.videowallpaper.data.HomeEffect.DIM),
+                        ),
+                        uri = photoUri,
+                        loader = loaderWithSamplePhoto(),
+                        depthStates = emptyMap(),
+                        widgetSnapshot = WidgetSnapshot(batteryPercent = 76),
+                        systemUses24Hour = true,
+                        onChange = {},
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun homeWithLockClockBanner() {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3000))
         paparazzi.snapshot {

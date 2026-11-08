@@ -153,7 +153,7 @@ object WidgetPainter {
         val signaturePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = color
             typeface = signatureTypeface
-            textSize = unit * 9f
+            textSize = unit * 9f * widgets.signatureSize.coerceIn(WidgetSettings.MIN_SIGNATURE_SIZE, WidgetSettings.MAX_SIGNATURE_SIZE)
             textAlign = Paint.Align.CENTER
             if (Color.luminance(color) > 0.5f) setShadowLayer(unit * 0.8f, 0f, unit * 0.3f, 0x55000000)
         }
@@ -162,7 +162,8 @@ object WidgetPainter {
         } else {
             TextUtils.ellipsize(signature, signaturePaint, width * 0.9f, TextUtils.TruncateAt.END).toString()
         }
-        val signatureHeight = if (signatureText != null) unit * 12f else 0f
+        // Room for the line, including tall Arabic letters and descenders.
+        val signatureHeight = if (signatureText != null) (signaturePaint.descent() - signaturePaint.ascent()) * 1.15f else 0f
 
         val top = widgets.position?.let { it * height }
             ?: ((clockBottom ?: (height * 0.3f)) + unit * 6f)
@@ -199,7 +200,7 @@ object WidgetPainter {
                 }
             }
             if (signatureText != null) {
-                val baseline = cardRect.bottom + signatureHeight * 0.72f
+                val baseline = cardRect.bottom + (signatureHeight - (signaturePaint.descent() - signaturePaint.ascent())) / 2f - signaturePaint.ascent()
                 canvas.drawText(signatureText, centerX, baseline, signaturePaint)
             }
         }

@@ -34,6 +34,7 @@ enum class TransitionStyle(val label: String) {
  * @property clockOffsets per-photo adjustment of the clock position (URI to share of screen height).
  * @property photoFramings per-photo zoom and position set in the editor (otherwise automatic).
  * @property widgets weather, battery and other widgets drawn on the wallpaper.
+ * @property home how the wallpaper changes on the home screen, after unlocking.
  * @property lockClockGuideDone the user has hidden their phone's own lock screen clock (or said so).
  * @property itemLooks per-item clock and widgets; items without one use [clock] and [widgets]
  *   (the default look).
@@ -54,6 +55,7 @@ data class WallpaperSettings(
     val widgets: WidgetSettings = WidgetSettings(),
     val itemLooks: Map<String, WallpaperLook> = emptyMap(),
     val lockClockGuideDone: Boolean = false,
+    val home: HomeScreenSettings = HomeScreenSettings(),
 ) {
     /** The default look, used for new items and when the slideshow is empty. */
     val defaultLook get() = WallpaperLook(clock, widgets)

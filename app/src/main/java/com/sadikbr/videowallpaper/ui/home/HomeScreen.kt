@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
@@ -120,6 +121,7 @@ data class HomeActions(
     val builtInUri: (BuiltInWallpapers.Wallpaper) -> String,
     val onToggleBuiltIn: (BuiltInWallpapers.Wallpaper) -> Unit,
     val onOpenLockClockGuide: () -> Unit = {},
+    val onOpenHomeScreenSettings: () -> Unit = {},
 )
 
 private val HomeBackground = Color(0xFF0B0920)
@@ -618,6 +620,28 @@ private fun SlideshowTiles(state: HomeState, actions: HomeActions) {
                 onCheckedChange = actions.onClockEverywhere,
                 colors = SwitchDefaults.colors(checkedTrackColor = Brand.Violet),
             )
+        }
+        // How the home screen differs from the lock screen.
+        BouncyBox(
+            onClick = actions.onOpenHomeScreenSettings,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(CardSurface)
+                .border(1.dp, CardBorder, RoundedCornerShape(22.dp)),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TileIcon(Icons.Filled.Home, Color(0xFFFFC94D))
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Home screen look", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                    Text(s.home.summary(), color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Icon(Icons.Filled.KeyboardArrowRight, null, tint = Muted)
+            }
         }
     }
 }

@@ -50,10 +50,12 @@ data class WallpaperLook(
             .put("battery", battery)
             .put("calendar", calendar)
             .put("signature", signature)
+            .put("signatureSize", signatureSize.toDouble())
             .put("style", style.name)
             .apply {
                 position?.let { put("position", it.toDouble()) }
                 fahrenheit?.let { put("fahrenheit", it) }
+                signatureFont?.let { put("signatureFont", it.name) }
             }
 
         private fun widgetsFromJson(j: JSONObject, d: WidgetSettings) = WidgetSettings(
@@ -62,6 +64,8 @@ data class WallpaperLook(
             battery = j.optBoolean("battery", d.battery),
             calendar = j.optBoolean("calendar", d.calendar),
             signature = j.optString("signature", d.signature),
+            signatureFont = SignatureFont.entries.firstOrNull { it.name == j.optString("signatureFont") },
+            signatureSize = j.optDouble("signatureSize", d.signatureSize.toDouble()).toFloat(),
             style = WidgetStyle.entries.firstOrNull { it.name == j.optString("style") } ?: d.style,
             position = if (j.has("position")) j.getDouble("position").toFloat() else null,
             fahrenheit = if (j.has("fahrenheit")) j.getBoolean("fahrenheit") else null,

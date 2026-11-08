@@ -151,6 +151,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         result.framings.forEach { (uri, framing) -> repository.setPhotoFraming(uri, framing) }
     }
 
+    fun setHomeScreen(home: com.sadikbr.videowallpaper.data.HomeScreenSettings) = launch { repository.setHomeScreen(home) }
     fun setLockClockGuideDone() = launch { repository.setLockClockGuideDone(true) }
 
     /** The main "Depth clock" switch: turns the clock on or off for every wallpaper. */
