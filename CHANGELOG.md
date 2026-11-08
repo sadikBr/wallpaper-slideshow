@@ -2,34 +2,32 @@
 
 ## [1.1.0] - 2026-11-08
 
-### Changed
-- **Redesigned home screen**: a dark, picture-first design. Your wallpapers are a swipeable carousel of live previews, each with its own clock and widgets; edit, reorder or remove the one in the middle, set the wallpaper with one big button, see the slideshow settings at a glance (tap a tile for the full settings in a sheet), and explore the built-in wallpapers. Soft animated glows, springy buttons and a friendly empty state.
-- **New name: Wallpaper Slideshow** (previously Video Slideshow), with a new look: a new app icon with a themed (single-colour) version for Android 13+, a matching colour palette across the app, a gradient header card, and a branded launch screen. Updating keeps your settings and your current wallpaper.
+A big update: Video Slideshow is now **Wallpaper Slideshow**, with an iOS-style depth clock, widgets, a hands-on editor and a redesigned home screen.
 
-### Added
-- **A look per wallpaper**: every photo or video can have its own clock (font, colour, size, stretch, glass, on or off) and its own widgets. Pick a wallpaper in the editor's strip to edit its look; "Same look for all" copies the current one to every wallpaper. New wallpapers start from the default look, and the clock and widgets cross-fade with each transition. The main Depth clock switch still turns the clock on or off everywhere.
-- **Widgets** drawn on the wallpaper, in front of the photo and its subject: weather (with today's high and low), air quality, battery and your next calendar event, plus a handwritten signature line. Frosted-glass or plain style, °C or °F, placed under the clock or dragged anywhere in the editor. Weather and air quality come from Open-Meteo (free, no account) using the approximate location read while the app is open; the calendar needs calendar access. All permissions are optional.
-- **Wallpaper editor**: a full-screen live preview you edit by hand. Drag the clock to move it, pinch it to resize, pull the handle under it to stretch the digits taller, and pinch or drag the photo to frame it (double-tap resets). A bottom tray has live font samples, colours (including one matched to the photo), glass effects (Solid, Glass, Frost, Ghost, Mist, plus opacity and fade) and clock options.
-- **Clock fonts** for tall, iOS-style clocks: Antonio, Antonio Bold, Oswald, Bebas and Big Shoulders (SIL Open Font License), alongside the system fonts. The clock is sized by width and can be stretched.
-- **Gallery** of eight built-in wallpapers made for the depth clock: Violet Peaks, Northern Lights, Golden Palm, Blue Hour (with exact subject cut-outs), Silk, Prism, and two animated loops: Aurora Live (with depth) and Prism Flow.
-- **Depth for videos**: each video is analysed once in the background (8 cut-outs per second, first minute; about a minute of work, with progress on its tile), then its subject stays in front of the clock as it plays.
-- **Automatic depth framing**: like iOS, a photo is zoomed and moved so its subject reaches into the clock, which stays near the top. Only the time goes behind the subject; the date stays in front.
-- **Depth clock**: the wallpaper can draw its own large clock, and in photos with a clear subject (people, pets, buildings, objects) the subject stands in front of the time, like iOS depth-effect wallpapers.
-  - Subjects are found on the phone with Google's ML Kit (no upload); each photo is analysed once and the result is saved.
-  - Like iOS, the effect is skipped for a photo when the subject would hide too much of the time.
-  - Choose the clock's colour, size, style (thin, regular, bold), 12/24-hour time, date line and position.
-  - Move the clock for a single photo with **Adjust clock** in that photo's menu, with a live preview.
-- The preview at the top of the app shows the clock and depth effect.
+### Highlights
+- **Depth clock**: the wallpaper draws a big clock, and the subject of your photo or video (people, pets, buildings, objects) stands in front of the time, like iOS depth-effect wallpapers. Subjects are found on the phone with Google's ML Kit (nothing is uploaded). Photos are zoomed and moved automatically so the subject reaches into the clock, and the effect is skipped when it would hide too much of the time. Videos are analysed once in the background (about a minute each, with progress shown), then their subject stays in front of the clock as they play.
+- **Widgets**: weather (with today's high and low), air quality, battery, your next calendar event and a handwritten signature, on a frosted-glass card or as plain text, placed under the clock or anywhere you drag them. Weather data comes from Open-Meteo (free, no account) using the approximate location read while the app is open; calendar access is only asked for if you turn that widget on.
+- **A look per wallpaper**: every photo and video can have its own clock (font, colour, size, stretch, glass, or no clock) and its own widgets; "Same look for all" copies one look to every wallpaper. The clock and widgets fade into each wallpaper's look with the transition.
+- **Wallpaper editor**: edit right on a full-screen live preview. Drag the clock to move it, pinch to resize it, pull the handle under it to stretch the digits; pinch and drag photos to frame them; double-tap to reset. Tools for fonts (tall display fonts such as Antonio, Oswald, Bebas and Big Shoulders), colours (including one matched to your photo), glass effects (Solid, Glass, Frost, Ghost, Mist), widgets and clock options.
+- **Transitions** between items: crossfade, fade to black, zoom, slide or none, 0.3 to 2 seconds.
+- **Photos**: slideshows of photos, videos, or a mix, with a photo duration setting.
+- **Gallery**: eight built-in wallpapers made for the depth clock, including two animated ones (Aurora Live, with depth, and Prism Flow).
+- **Redesigned home screen**: a dark, picture-first design with your wallpapers as a swipeable carousel of live previews, one big "Set as wallpaper" button, slideshow settings at a glance, and the gallery.
+- **New name and look**: Wallpaper Slideshow, with a new app icon (including a themed icon for Android 13+), colours and launch screen.
 
-Note: the phone's own lock-screen clock is still drawn on top of any wallpaper, and Android doesn't let apps remove it. On Samsung phones the app now walks you through making it invisible (lock screen editor › clock › fully transparent colour) right after you set the wallpaper, so only the depth clock shows. The home screen has no system clock, so the effect works there as is.
+### Lock screen clock
+Your phone's own lock-screen clock is drawn on top of any wallpaper, and Android doesn't let apps remove it. On Samsung phones the app guides you through making it invisible (lock screen editor › clock › fully transparent colour), so only the depth clock shows. The home screen has no system clock, so the effect works there as is.
 
-### Also in this release
-Everything from 1.0.1 below (fix for the wallpaper getting stuck on a plain blue background).
+### Fixes
+- The wallpaper no longer gets stuck on a plain blue background when items fail to start (1.0.1).
+- The video player is released while the wallpaper is hidden, which frees the phone's video decoders and saves battery (1.0.1).
 
 ### Install
-Download `WallpaperSlideshow-v1.1.0.apk` below and open it on your phone. It installs over earlier versions and keeps your settings.
+Download `WallpaperSlideshow-v1.1.0.apk` below and open it on your phone. It installs over earlier versions and keeps your settings and your current wallpaper.
 
 ## [1.0.1] - 2026-11-08
+
+Not released on its own; included in 1.1.0.
 
 ### Fixed
 - The wallpaper could get stuck on a plain dark-blue background until a setting was changed. This happened when every item failed to start at once, usually because the phone's video decoders were busy; the wallpaper then gave up. It now keeps the last picture on screen and tries again automatically, and a failed item is only skipped for that turn instead of being dropped from the slideshow.
