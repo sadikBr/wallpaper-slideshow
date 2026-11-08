@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Video Slideshow</string>
+    <string name="wallpaper_name">Video Slideshow</string>
+    <string name="wallpaper_description">Plays your chosen videos one after another as your background.</string>
+</resources>
