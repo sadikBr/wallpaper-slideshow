@@ -34,7 +34,7 @@ class MediaInfoLoader(context: Context) {
     suspend fun load(uri: String): MediaInfo = cache.get(uri) ?: withContext(Dispatchers.IO) {
         val parsed = Uri.parse(uri)
         val kind = MediaKind.of(appContext, parsed)
-        val name = queryDisplayName(parsed)
+        val name = BuiltInWallpapers.find(appContext, uri)?.name ?: queryDisplayName(parsed)
         val info = try {
             when (kind) {
                 MediaKind.IMAGE -> MediaInfo(kind, name, null, loadImageThumbnail(parsed), available = true)

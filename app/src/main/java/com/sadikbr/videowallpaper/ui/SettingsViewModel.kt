@@ -11,6 +11,7 @@ import com.sadikbr.videowallpaper.data.TransitionStyle
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import android.text.format.DateFormat
+import com.sadikbr.videowallpaper.data.BuiltInWallpapers
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaKind
@@ -62,6 +63,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
         editMedia { current -> current + added.filterNot { it in current }.distinct() }
     }
+
+    /** Adds a built-in wallpaper to the slideshow, or removes it if it is already in. */
+    fun toggleBuiltIn(wallpaper: BuiltInWallpapers.Wallpaper) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val uri = BuiltInWallpapers.uriOf(app, wallpaper)
+            if (uri in settings.value?.media.orEmpty()) {
+                removeItem(uri)
+            } else {
+                BuiltInWallpapers.install(app, wallpaper)
+                repository.updateMedia { current -> if (uri in current) current else current + uri }
+            }
+        }
+    }
+
+    fun builtInUri(wallpaper: BuiltInWallpapers.Wallpaper): String = BuiltInWallpapers.uriOf(getApplication(), wallpaper)
 
     fun removeItem(uri: String) {
         editMedia { current -> current - uri }

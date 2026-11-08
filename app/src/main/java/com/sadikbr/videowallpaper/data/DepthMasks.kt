@@ -28,6 +28,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 
 /**
@@ -117,6 +118,20 @@ object DepthMasks {
         Canvas(alpha).drawBitmap(gray, 0f, 0f, paint)
         gray.recycle()
         return alpha
+    }
+
+    /**
+     * Saves a ready-made cut-out for [uri] (grayscale, white = subject, same shape as the
+     * picture), as shipped with the built-in wallpapers.
+     */
+    fun importMask(context: Context, uri: String, mask: InputStream) {
+        val target = maskFile(context, uri)
+        target.parentFile?.mkdirs()
+        val temp = File(target.parentFile, target.name + ".tmp")
+        temp.outputStream().use { mask.copyTo(it) }
+        temp.renameTo(target)
+        noSubjectMarker(context, uri).delete()
+        setState(uri, State.READY)
     }
 
     /** Deletes what was saved for [uri], e.g. when the photo is removed from the slideshow. */

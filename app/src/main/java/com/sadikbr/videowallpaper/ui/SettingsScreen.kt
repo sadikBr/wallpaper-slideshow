@@ -46,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sadikbr.videowallpaper.ui.components.EmptyMediaCard
 import com.sadikbr.videowallpaper.ui.components.AdjustClockDialog
 import com.sadikbr.videowallpaper.ui.components.ClockCard
+import com.sadikbr.videowallpaper.ui.components.GalleryRow
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.MediaKind
@@ -142,6 +143,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     use24Hour = use24Hour,
                     depthStates = depthStates,
                     onApply = { openWallpaperPicker(context) },
+                )
+            }
+
+            fullWidth("gallery-header") {
+                SectionHeader(title = "Gallery", hint = "Wallpapers made for the depth clock. Tap to add.")
+            }
+            fullWidth("gallery") {
+                val included = current.media.toSet()
+                GalleryRow(
+                    included = included,
+                    uriOf = viewModel::builtInUri,
+                    onToggle = viewModel::toggleBuiltIn,
                 )
             }
 

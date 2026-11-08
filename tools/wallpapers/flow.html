@@ -1,0 +1,35 @@
+<!doctype html>
+<html><body style="margin:0;background:#17123A;overflow:hidden">
+<canvas id="c"></canvas>
+<script>
+// "Prism Flow": soft colour blobs drifting in a seamless loop. render(t) draws frame t in [0, 1).
+const c = document.getElementById('c');
+const W = innerWidth, H = innerHeight;
+c.width = W; c.height = H;
+const g = c.getContext('2d');
+const blobs = [
+  { color: '#3B2DB5', x: 0.2, y: 0.22, r: 0.75, ax: 0.18, ay: 0.08, k: 1, p: 0.0 },
+  { color: '#7B3FE4', x: 0.8, y: 0.36, r: 0.8, ax: 0.16, ay: 0.1, k: 1, p: 1.7 },
+  { color: '#FF7A66', x: 0.3, y: 0.66, r: 0.85, ax: 0.2, ay: 0.08, k: 2, p: 3.1 },
+  { color: '#E0608F', x: 0.8, y: 0.84, r: 0.75, ax: 0.15, ay: 0.09, k: 1, p: 4.4 },
+  { color: '#5BC8F5', x: 0.5, y: 0.5, r: 0.5, ax: 0.22, ay: 0.14, k: 2, p: 5.3, a: 0.55 },
+];
+window.render = (t) => {
+  g.globalAlpha = 1;
+  g.fillStyle = '#17123A';
+  g.fillRect(0, 0, W, H);
+  g.filter = `blur(${Math.round(W * 0.12)}px)`;
+  for (const b of blobs) {
+    const a = 2 * Math.PI * t * b.k + b.p;
+    const x = (b.x + b.ax * Math.sin(a)) * W;
+    const y = (b.y + b.ay * Math.cos(a)) * H;
+    g.globalAlpha = b.a || 1;
+    g.fillStyle = b.color;
+    g.beginPath();
+    g.arc(x, y, b.r * W * 0.5, 0, 2 * Math.PI);
+    g.fill();
+  }
+  g.filter = 'none';
+};
+render(0);
+</script></body></html>
