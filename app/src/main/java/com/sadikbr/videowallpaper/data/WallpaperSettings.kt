@@ -28,7 +28,9 @@ data class WallpaperSettings(
     val speed: Float = 1f,
 ) {
     companion object {
-        val CLIP_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
+        /** Choices for "next video every N seconds" (0, playing in full, is a separate switch). */
+        val CLIP_SECONDS_OPTIONS = listOf(5, 10, 15, 20, 30, 45, 60)
+        const val DEFAULT_CLIP_SECONDS = 10
         val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
     }
 }

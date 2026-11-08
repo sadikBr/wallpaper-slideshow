@@ -1,0 +1,164 @@
+package com.sadikbr.videowallpaper.ui.components
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import com.sadikbr.videowallpaper.data.ScaleMode
+import com.sadikbr.videowallpaper.data.VideoInfoLoader
+import com.sadikbr.videowallpaper.data.WallpaperSettings
+import com.sadikbr.videowallpaper.ui.theme.AppIcons
+
+/** Top card: a phone-shaped preview, the wallpaper's status, and the main action. */
+@Composable
+fun HeroCard(
+    settings: WallpaperSettings,
+    loader: VideoInfoLoader,
+    wallpaperActive: Boolean,
+    onApply: () -> Unit,
+) {
+    val hasVideos = settings.videos.isNotEmpty()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
+        Row(
+            Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PhonePreview(
+                uri = settings.videos.firstOrNull(),
+                loader = loader,
+                scaleMode = settings.scaleMode,
+                modifier = Modifier.width(96.dp),
+            )
+            Spacer(Modifier.width(20.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatusPill(active = wallpaperActive)
+                Text(
+                    if (hasVideos) "Your slideshow" else "Get started",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    if (hasVideos) summary(settings) else "Add videos below, then set the slideshow as your wallpaper.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                )
+                Spacer(Modifier.height(4.dp))
+                Button(onClick = onApply, enabled = hasVideos) {
+                    Icon(AppIcons.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (wallpaperActive) "Preview" else "Set as wallpaper")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhonePreview(
+    uri: String?,
+    loader: VideoInfoLoader,
+    scaleMode: ScaleMode,
+    modifier: Modifier = Modifier,
+) {
+    val info by rememberVideoInfo(uri, loader)
+    val thumbnail = info?.thumbnail
+    Box(
+        modifier
+            .aspectRatio(9f / 19f)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF101318))
+            .border(4.dp, Color(0xFF2A2F3A), RoundedCornerShape(18.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (thumbnail != null) {
+            Image(
+                bitmap = thumbnail.asImageBitmap(),
+                contentDescription = "Preview of the first video",
+                // Mirror the chosen "fit to screen" setting so its effect is visible here.
+                contentScale = if (scaleMode == ScaleMode.CROP) ContentScale.Crop else ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(4.dp).clip(RoundedCornerShape(14.dp)),
+            )
+        } else {
+            Icon(
+                AppIcons.VideoLibrary,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.size(28.dp),
+            )
+        }
+        // Camera punch-hole, for a phone-like look.
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 10.dp)
+                .size(6.dp)
+                .background(Color.Black, CircleShape)
+        )
+    }
+}
+
+@Composable
+private fun StatusPill(active: Boolean) {
+    val background = if (active) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surface
+    val content = if (active) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .background(background, CircleShape)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (active) {
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = content, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            if (active) "Active wallpaper" else "Not set yet",
+            style = MaterialTheme.typography.labelMedium,
+            color = content,
+        )
+    }
+}
+
+private fun summary(settings: WallpaperSettings): String = buildList {
+    val count = settings.videos.size
+    add(if (count == 1) "1 video" else "$count videos")
+    if (settings.shuffle) add("shuffled")
+    add(if (settings.clipSeconds > 0) "${settings.clipSeconds}s each" else "full length")
+    if (!settings.muted) add("with sound")
+}.joinToString(" · ")

@@ -57,7 +57,7 @@ class VideoInfoLoader(context: Context) {
     }.getOrNull()
 
     private fun scaleDown(frame: Bitmap): Bitmap {
-        val maxSide = 240
+        val maxSide = 360
         val largest = maxOf(frame.width, frame.height)
         if (largest <= maxSide) return frame
         val ratio = maxSide.toFloat() / largest

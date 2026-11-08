@@ -8,69 +8,46 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.sadikbr.videowallpaper.data.ScaleMode
-import com.sadikbr.videowallpaper.data.VideoInfo
-import com.sadikbr.videowallpaper.data.VideoInfoLoader
-import com.sadikbr.videowallpaper.data.WallpaperSettings
+import com.sadikbr.videowallpaper.ui.components.EmptyVideosCard
+import com.sadikbr.videowallpaper.ui.components.HeroCard
+import com.sadikbr.videowallpaper.ui.components.PlaybackCard
+import com.sadikbr.videowallpaper.ui.components.SectionHeader
+import com.sadikbr.videowallpaper.ui.components.VideoTile
 import com.sadikbr.videowallpaper.wallpaper.VideoWallpaperService
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +55,7 @@ import com.sadikbr.videowallpaper.wallpaper.VideoWallpaperService
 fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     // Re-check on every return to the app, e.g. after the system "Set wallpaper" screen.
     var wallpaperActive by remember { mutableStateOf(false) }
@@ -89,14 +67,21 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val pickVideos = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> viewModel.addVideos(uris) }
+    val addVideos = { pickVideos.launch(arrayOf("video/*")) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Video Slideshow") }) },
-        bottomBar = {
-            ApplyBar(
-                wallpaperActive = wallpaperActive,
-                enabled = settings?.videos?.isNotEmpty() == true,
-                onApply = { openWallpaperPicker(context) },
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            LargeTopAppBar(
+                title = { Text("Video Slideshow") },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = addVideos,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Add videos") },
             )
         },
     ) { padding ->
@@ -108,257 +93,73 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             return@Scaffold
         }
 
-        LazyColumn(
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 104.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 16.dp,
+                top = padding.calculateTopPadding() + 4.dp,
+                bottom = padding.calculateBottomPadding() + 96.dp, // room for the button
             ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item {
-                SectionTitle("Videos (${current.videos.size})")
+            fullWidth("hero") {
+                HeroCard(
+                    settings = current,
+                    loader = viewModel.videoInfoLoader,
+                    wallpaperActive = wallpaperActive,
+                    onApply = { openWallpaperPicker(context) },
+                )
             }
+
+            fullWidth("videos-header") {
+                SectionHeader(
+                    title = "Your videos",
+                    trailing = if (current.videos.isEmpty()) null else "${current.videos.size}",
+                    hint = if (current.videos.size > 1) "Tap a video to reorder or remove it" else null,
+                )
+            }
+
             if (current.videos.isEmpty()) {
-                item {
-                    Text(
-                        "No videos yet. Add some videos and they'll play one after another as your background.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                fullWidth("empty") { EmptyVideosCard(onAdd = addVideos) }
             }
+
             itemsIndexed(current.videos, key = { _, uri -> uri }) { index, uri ->
-                VideoRow(
+                VideoTile(
+                    position = index + 1,
                     uri = uri,
                     loader = viewModel.videoInfoLoader,
-                    canMoveUp = index > 0,
-                    canMoveDown = index < current.videos.lastIndex,
-                    onMoveUp = { viewModel.moveVideo(index, index - 1) },
-                    onMoveDown = { viewModel.moveVideo(index, index + 1) },
+                    canMoveEarlier = index > 0,
+                    canMoveLater = index < current.videos.lastIndex,
+                    onMoveEarlier = { viewModel.moveVideo(index, index - 1) },
+                    onMoveLater = { viewModel.moveVideo(index, index + 1) },
                     onRemove = { viewModel.removeVideo(uri) },
                     modifier = Modifier.animateItem(),
                 )
             }
-            item {
-                FilledTonalButton(
-                    onClick = { pickVideos.launch(arrayOf("video/*")) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add videos")
-                }
-            }
-            item {
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                PlaybackSettings(current, viewModel)
-            }
-        }
-    }
-}
 
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(vertical = 4.dp),
-    )
-}
-
-@Composable
-private fun VideoRow(
-    uri: String,
-    loader: VideoInfoLoader,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onRemove: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var info by remember(uri) { mutableStateOf<VideoInfo?>(loader.cached(uri)) }
-    LaunchedEffect(uri) {
-        info = loader.load(uri)
-    }
-
-    Card(modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(8.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(width = 96.dp, height = 54.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                val thumbnail = info?.thumbnail
-                if (thumbnail != null) {
-                    Image(
-                        bitmap = thumbnail.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Icon(
-                        if (info?.available == false) Icons.Default.Warning else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Column(
-                Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp)
-            ) {
-                Text(
-                    info?.name ?: "Video",
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                val subtitle = when {
-                    info == null -> "Loading…"
-                    info?.available == false -> "Can't open this video — it will be skipped"
-                    else -> info?.durationMs?.let(::formatDuration) ?: ""
-                }
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (info?.available == false) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            Column {
-                IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move up")
-                }
-                IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move down")
-                }
-            }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove")
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PlaybackSettings(settings: WallpaperSettings, viewModel: SettingsViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionTitle("Playback")
-
-        SwitchRow(
-            title = "Shuffle",
-            description = "Play videos in random order",
-            checked = settings.shuffle,
-            onCheckedChange = viewModel::setShuffle,
-        )
-        SwitchRow(
-            title = "Sound",
-            description = "Play the videos' audio",
-            checked = !settings.muted,
-            onCheckedChange = { viewModel.setMuted(!it) },
-        )
-
-        SettingLabel("Length of each video")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            WallpaperSettings.CLIP_OPTIONS.forEach { seconds ->
-                FilterChip(
-                    selected = settings.clipSeconds == seconds,
-                    onClick = { viewModel.setClipSeconds(seconds) },
-                    label = { Text(if (seconds == 0) "Full video" else "${seconds}s") },
-                )
-            }
-        }
-
-        SettingLabel("Fit to screen")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = settings.scaleMode == ScaleMode.CROP,
-                onClick = { viewModel.setScaleMode(ScaleMode.CROP) },
-                label = { Text("Fill screen (crop)") },
-            )
-            FilterChip(
-                selected = settings.scaleMode == ScaleMode.FIT,
-                onClick = { viewModel.setScaleMode(ScaleMode.FIT) },
-                label = { Text("Whole video (bars)") },
-            )
-        }
-
-        SettingLabel("Speed")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            WallpaperSettings.SPEED_OPTIONS.forEach { speed ->
-                FilterChip(
-                    selected = settings.speed == speed,
-                    onClick = { viewModel.setSpeed(speed) },
-                    label = { Text("${formatSpeed(speed)}×") },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.bodyLarge)
-}
-
-@Composable
-private fun SwitchRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Composable
-private fun ApplyBar(wallpaperActive: Boolean, enabled: Boolean, onApply: () -> Unit) {
-    Surface(tonalElevation = 3.dp) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(16.dp)
-        ) {
-            if (wallpaperActive) {
-                Text(
-                    "Your slideshow is the current wallpaper. Changes apply right away.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            fullWidth("playback-header") {
                 Spacer(Modifier.height(8.dp))
+                SectionHeader(title = "Playback")
             }
-            Button(onClick = onApply, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-                Text(if (wallpaperActive) "Open wallpaper preview" else "Set as wallpaper")
+            fullWidth("playback") {
+                PlaybackCard(
+                    settings = current,
+                    onShuffleChange = viewModel::setShuffle,
+                    onMutedChange = viewModel::setMuted,
+                    onClipSecondsChange = viewModel::setClipSeconds,
+                    onSpeedChange = viewModel::setSpeed,
+                    onScaleModeChange = viewModel::setScaleMode,
+                )
             }
         }
     }
+}
+
+private fun LazyGridScope.fullWidth(key: String, content: @Composable () -> Unit) {
+    item(key = key, span = { GridItemSpan(maxLineSpan) }) { content() }
 }
 
 private fun isOurWallpaperActive(context: Context): Boolean {
@@ -385,11 +186,3 @@ private fun openWallpaperPicker(context: Context) {
         }
     }
 }
-
-private fun formatDuration(ms: Long): String {
-    val totalSeconds = ms / 1000
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
-
-private fun formatSpeed(speed: Float): String =
-    if (speed % 1f == 0f) speed.toInt().toString() else speed.toString()
