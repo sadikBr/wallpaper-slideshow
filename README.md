@@ -1,6 +1,12 @@
-# Video Slideshow Wallpaper
+<p align="center">
+  <img src="docs/brand/icon.svg" width="128" height="128" alt="Wallpaper Slideshow icon">
+</p>
 
-An Android live wallpaper that plays a slideshow of your own photos and videos as your phone's background.
+<h1 align="center">Wallpaper Slideshow</h1>
+
+<p align="center"><b>Your photos and videos, alive on your home screen.</b></p>
+
+Wallpaper Slideshow is an Android live wallpaper that plays a slideshow of your own photos and videos as your phone's background, with smooth transitions and an iOS-style depth clock.
 
 Pick some photos and/or videos, choose how they should play, tap **Set as wallpaper**, and they
 will loop one after another behind your home screen (and lock screen, on most phones).
@@ -25,9 +31,9 @@ Changes made in the app apply to the running wallpaper immediately.
 
 ### Download a release
 1. Open the repository's **Releases** page on GitHub and pick the latest version.
-2. Download `VideoSlideshow-vX.Y.Z.apk` on your phone and open it. Allow installing from that source if Android asks.
+2. Download `WallpaperSlideshow-vX.Y.Z.apk` on your phone and open it. Allow installing from that source if Android asks.
 
-Builds of every commit on `main` are also available as the `VideoSlideshow-apk` artifact of the **Build APK** runs in the **Actions** tab.
+Builds of every commit on `main` are also available as the `WallpaperSlideshow-apk` artifact of the **Build APK** runs in the **Actions** tab.
 
 Every build (releases included) is signed with the same key (`keystore/debug.keystore`), so new versions install
 over old ones without uninstalling.
@@ -43,7 +49,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Use
 
-1. Open **Video Slideshow**.
+1. Open **Wallpaper Slideshow**.
 2. Tap **Add photos & videos** and choose one or more items.
 3. Adjust the playback options.
 4. Tap **Set as wallpaper**, then **Set wallpaper** on the preview screen (choose home and/or lock screen if asked).
@@ -77,3 +83,7 @@ The app keeps persistent read access to each chosen item (Storage Access Framewo
 2. Add a section for the version to `CHANGELOG.md`.
 3. Push a tag such as `v1.1.0`, or run the **Release** workflow from the Actions tab and enter the version.
    It builds the APK and publishes a GitHub release (creating the tag if needed) with the APK and the changelog section.
+
+## Brand
+
+The icon, colours and naming are described in [docs/brand](docs/brand/README.md).

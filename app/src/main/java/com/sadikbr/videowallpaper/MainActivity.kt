@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.sadikbr.videowallpaper.ui.SettingsScreen
-import com.sadikbr.videowallpaper.ui.theme.VideoSlideshowTheme
+import com.sadikbr.videowallpaper.ui.theme.WallpaperSlideshowTheme
 
 /** Settings screen: choose photos and videos and how the slideshow plays, then set the wallpaper. */
 class MainActivity : ComponentActivity() {
@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            VideoSlideshowTheme {
+            WallpaperSlideshowTheme {
                 SettingsScreen()
             }
         }

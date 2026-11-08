@@ -42,6 +42,8 @@ import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import com.sadikbr.videowallpaper.ui.theme.AppIcons
+import com.sadikbr.videowallpaper.ui.theme.Brand
+import androidx.compose.material3.ButtonDefaults
 
 /** Top card: a phone-shaped preview, the wallpaper's status, and the main action. */
 @Composable
@@ -58,12 +60,14 @@ fun HeroCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            containerColor = Color.Transparent,
+            contentColor = Color.White,
         ),
     ) {
         Row(
-            Modifier.padding(20.dp),
+            Modifier
+                .background(Brand.gradient)
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val first = settings.media.firstOrNull()
@@ -85,10 +89,19 @@ fun HeroCard(
                 Text(
                     if (hasMedia) summary(settings, loader) else "Add photos or videos below, then set the slideshow as your wallpaper.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    color = Color.White.copy(alpha = 0.85f),
                 )
                 Spacer(Modifier.height(4.dp))
-                Button(onClick = onApply, enabled = hasMedia) {
+                Button(
+                    onClick = onApply,
+                    enabled = hasMedia,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Brand.Indigo,
+                        disabledContainerColor = Color.White.copy(alpha = 0.3f),
+                        disabledContentColor = Color.White.copy(alpha = 0.7f),
+                    ),
+                ) {
                     Icon(AppIcons.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(if (wallpaperActive) "Preview" else "Set as wallpaper")
@@ -154,8 +167,8 @@ private fun PhonePreview(
 
 @Composable
 private fun StatusPill(active: Boolean) {
-    val background = if (active) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surface
-    val content = if (active) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant
+    val background = if (active) Color.White else Color.White.copy(alpha = 0.2f)
+    val content = if (active) Brand.Indigo else Color.White
     Row(
         Modifier
             .background(background, CircleShape)

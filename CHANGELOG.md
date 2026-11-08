@@ -2,6 +2,9 @@
 
 ## [1.1.0] - 2026-11-08
 
+### Changed
+- **New name: Wallpaper Slideshow** (previously Video Slideshow), with a new look: a new app icon with a themed (single-colour) version for Android 13+, a matching colour palette across the app, a gradient header card, and a branded launch screen. Updating keeps your settings and your current wallpaper.
+
 ### Added
 - **Depth clock**: the wallpaper can draw its own large clock, and in photos with a clear subject (people, pets, buildings, objects) the subject stands in front of the time, like iOS depth-effect wallpapers.
   - Subjects are found on the phone with Google's ML Kit (no upload); each photo is analysed once and the result is saved.
@@ -17,7 +20,7 @@ Note: the phone's own lock-screen clock is still drawn on top of any wallpaper. 
 Everything from 1.0.1 below (fix for the wallpaper getting stuck on a plain blue background).
 
 ### Install
-Download `VideoSlideshow-v1.1.0.apk` below and open it on your phone. It installs over earlier versions and keeps your settings.
+Download `WallpaperSlideshow-v1.1.0.apk` below and open it on your phone. It installs over earlier versions and keeps your settings.
 
 ## [1.0.1] - 2026-11-08
 

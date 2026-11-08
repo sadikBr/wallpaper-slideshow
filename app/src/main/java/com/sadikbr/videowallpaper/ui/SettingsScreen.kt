@@ -82,7 +82,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("Video Slideshow") },
+                title = { Text("Wallpaper Slideshow") },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -245,7 +245,7 @@ private fun openWallpaperPicker(context: Context) {
         try {
             // Some phones lack the direct screen; fall back to the list of live wallpapers.
             context.startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
-            Toast.makeText(context, "Choose \"Video Slideshow\" from the list", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Choose \"Wallpaper Slideshow\" from the list", Toast.LENGTH_LONG).show()
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(context, "This phone doesn't support live wallpapers", Toast.LENGTH_LONG).show()
         }

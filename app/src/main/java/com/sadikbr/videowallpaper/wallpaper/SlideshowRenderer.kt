@@ -821,10 +821,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         const val MAX_PENDING_IMAGES = 3
         const val NOT_TRANSITIONING = -1L
 
-        // Background shown when there is nothing to play (matches the app icon).
-        const val EMPTY_RED = 0x1E / 255f
-        const val EMPTY_GREEN = 0x2A / 255f
-        const val EMPTY_BLUE = 0x4A / 255f
+        // Background shown when there is nothing to play (the brand's deep ink colour).
+        const val EMPTY_RED = 0x17 / 255f
+        const val EMPTY_GREEN = 0x12 / 255f
+        const val EMPTY_BLUE = 0x3A / 255f
 
         val IDENTITY = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
 

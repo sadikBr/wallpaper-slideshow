@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" width="512" height="512">
+  <title>Wallpaper Slideshow</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B2DB5"/>
+      <stop offset="0.55" stop-color="#7B3FE4"/>
+      <stop offset="1" stop-color="#FF7A66"/>
+    </linearGradient>
+    <linearGradient id="pic" x1="40.5" y1="38" x2="67.5" y2="63" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B2DB5"/>
+      <stop offset="0.6" stop-color="#7B3FE4"/>
+      <stop offset="1" stop-color="#FF7A66"/>
+    </linearGradient>
+    <clipPath id="shape"><rect x="18" y="18" width="72" height="72" rx="18"/></clipPath>
+  </defs>
+  <g clip-path="url(#shape)">
+    <rect x="0" y="0" width="108" height="108" fill="url(#bg)"/>
+    <g transform="translate(-4 0) rotate(-14 54 58)"><path d="M42,34h24a5,5 0 0 1 5,5v34a5,5 0 0 1 -5,5h-24a5,5 0 0 1 -5,-5v-34a5,5 0 0 1 5,-5z" fill="#fff" fill-opacity="0.35"/></g>
+    <g transform="translate(4 0) rotate(10 54 58)"><path d="M42,34h24a5,5 0 0 1 5,5v34a5,5 0 0 1 -5,5h-24a5,5 0 0 1 -5,-5v-34a5,5 0 0 1 5,-5z" fill="#fff" fill-opacity="0.6"/></g>
+    <path d="M42,34h24a5,5 0 0 1 5,5v34a5,5 0 0 1 -5,5h-24a5,5 0 0 1 -5,-5v-34a5,5 0 0 1 5,-5z" fill="#fff"/>
+    <path d="M43,38h22a2.5,2.5 0 0 1 2.5,2.5v22.5h-27v-22.5a2.5,2.5 0 0 1 2.5,-2.5z" fill="url(#pic)"/>
+    <circle cx="60" cy="45" r="3.2" fill="#FFD9A0"/>
+    <path d="M40.5,63L49,51.5L54,57.5L58.5,52.5L67.5,61.5V63Z" fill="#fff" fill-opacity="0.92"/>
+    <circle cx="49.5" cy="70.5" r="1.7" fill="#7B3FE4"/>
+    <circle cx="54" cy="70.5" r="1.7" fill="#D9D3F2"/>
+    <circle cx="58.5" cy="70.5" r="1.7" fill="#D9D3F2"/>
+  </g>
+</svg>

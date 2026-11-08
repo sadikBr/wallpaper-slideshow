@@ -40,7 +40,7 @@ jobs:
       - name: Prepare APK and release notes
         run: |
           VERSION="${TAG#v}"
-          cp app/build/outputs/apk/release/app-release.apk "VideoSlideshow-${TAG}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "WallpaperSlideshow-${TAG}.apk"
           # Take this version's section from CHANGELOG.md (everything up to the next "## [").
           awk -v v="$VERSION" '
             $0 ~ "^## \\[" v "\\]" { found = 1; next }
@@ -53,6 +53,6 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
-          name: Video Slideshow ${{ env.TAG }}
+          name: Wallpaper Slideshow ${{ env.TAG }}
           body_path: release-notes.md
-          files: VideoSlideshow-${{ env.TAG }}.apk
+          files: WallpaperSlideshow-${{ env.TAG }}.apk

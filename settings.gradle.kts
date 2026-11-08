@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VideoSlideshowWallpaper"
+rootProject.name = "WallpaperSlideshow"
 include(":app")
