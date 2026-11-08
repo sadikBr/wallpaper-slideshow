@@ -179,18 +179,26 @@ fun WallpaperStudio(
     var selectedUri by remember { mutableStateOf(startUri ?: settings.media.firstOrNull()) }
     var tool by remember { mutableStateOf(Tool.entries[initialTool.coerceIn(0, Tool.entries.lastIndex)]) }
 
-    val uri = selectedUri
-    val look = when {
-        uri == null -> defaultLook ?: settings.defaultLook
-        else -> lookEdits[uri] ?: lookForAll ?: settings.lookFor(uri)
+    val currentSettings by rememberUpdatedState(settings)
+    /** The look being edited, read from the state each time (callbacks may outlive a recomposition). */
+    fun lookNow(): WallpaperLook {
+        val editing = selectedUri
+        return when {
+            editing == null -> defaultLook ?: currentSettings.defaultLook
+            else -> lookEdits[editing] ?: lookForAll ?: currentSettings.lookFor(editing)
+        }
     }
+    val uri = selectedUri
+    val look = lookNow()
     val clock = look.clock
     val widgets = look.widgets
     fun setLook(newLook: WallpaperLook) {
-        if (uri == null) defaultLook = newLook else lookEdits[uri] = newLook
+        val editing = selectedUri
+        if (editing == null) defaultLook = newLook else lookEdits[editing] = newLook
     }
-    fun setClock(newClock: ClockSettings) = setLook(look.copy(clock = newClock))
-    fun setWidgets(newWidgets: WidgetSettings) = setLook(look.copy(widgets = newWidgets))
+    // Change only the clock or only the widgets, keeping the latest of the other.
+    fun setClock(newClock: ClockSettings) = setLook(lookNow().copy(clock = newClock))
+    fun setWidgets(newWidgets: WidgetSettings) = setLook(lookNow().copy(widgets = newWidgets))
     fun applyToAll() {
         lookForAll = look
         lookEdits.clear()
@@ -372,6 +380,10 @@ private fun Editor(
     val currentPhoto by rememberUpdatedState(photo)
     val currentSelected by rememberUpdatedState(clockSelected)
     val currentWidgets by rememberUpdatedState(widgets)
+    val clockChanged by rememberUpdatedState(onClockChange)
+    val offsetChanged by rememberUpdatedState(onOffsetChange)
+    val framingChanged by rememberUpdatedState(onFramingChange)
+    val widgetsChanged by rememberUpdatedState(onWidgetsChange)
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         BoxWithConstraints(
@@ -408,16 +420,16 @@ private fun Editor(
                                 val g = currentGeometry
                                 if (g?.widgets?.expandedContains(point, 16f) == true) {
                                     // Widgets back under the clock.
-                                    onWidgetsChange(currentWidgets.copy(position = null))
+                                    widgetsChanged(currentWidgets.copy(position = null))
                                 } else if (g != null && g.time.expandedContains(point, 40f)) {
                                     // Clock back to its normal place.
                                     if (currentIsPhoto) {
-                                        onOffsetChange(null)
+                                        offsetChanged(null)
                                     } else {
-                                        onClockChange(currentClock.copy(position = ClockSettings.DEFAULT_POSITION))
+                                        clockChanged(currentClock.copy(position = ClockSettings.DEFAULT_POSITION))
                                     }
                                 } else if (currentIsPhoto) {
-                                    onFramingChange(null)
+                                    framingChanged(null)
                                 }
                             },
                         )
@@ -470,7 +482,7 @@ private fun Editor(
                                                 .coerceIn(ClockSettings.MIN_WIDTH, ClockSettings.MAX_WIDTH),
                                         )
                                         if (currentIsPhoto) {
-                                            onOffsetChange(
+                                            offsetChanged(
                                                 (startOffset + dy).coerceIn(
                                                     ClockSettings.MIN_POSITION - startClock.position,
                                                     ClockSettings.MAX_POSITION - startClock.position,
@@ -482,12 +494,12 @@ private fun Editor(
                                                     .coerceIn(ClockSettings.MIN_POSITION, ClockSettings.MAX_POSITION),
                                             )
                                         }
-                                        onClockChange(updated)
+                                        clockChanged(updated)
                                     }
                                     DragTarget.STRETCH -> {
                                         val stretch = (startClock.stretch * (startDigits + totalPan.y) / startDigits)
                                             .coerceIn(ClockSettings.MIN_STRETCH, ClockSettings.MAX_STRETCH)
-                                        onClockChange(startClock.copy(stretch = stretch))
+                                        clockChanged(startClock.copy(stretch = stretch))
                                     }
                                     DragTarget.PHOTO -> {
                                         val p = photoAtStart ?: break
@@ -496,7 +508,7 @@ private fun Editor(
                                         val fitted = fitRect(p.width, p.height, widthPx, heightPx, scaleMode == ScaleMode.CROP)
                                         val maxX = ((fitted.width() * zoomed - widthPx) / 2f / widthPx).coerceAtLeast(0f)
                                         val maxY = ((fitted.height() * zoomed - heightPx) / 2f / heightPx).coerceAtLeast(0f)
-                                        onFramingChange(
+                                        framingChanged(
                                             PhotoFraming(
                                                 zoom = zoomed,
                                                 shift = (startFraming.shift + totalPan.y / heightPx).coerceIn(-maxY, maxY),
@@ -506,7 +518,7 @@ private fun Editor(
                                     }
                                     DragTarget.WIDGETS -> {
                                         val top = (startWidgetsTop + totalPan.y) / heightPx
-                                        onWidgetsChange(
+                                        widgetsChanged(
                                             startWidgets.copy(
                                                 position = top.coerceIn(WidgetSettings.MIN_POSITION, WidgetSettings.MAX_POSITION),
                                             ),
