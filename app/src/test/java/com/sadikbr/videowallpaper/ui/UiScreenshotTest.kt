@@ -81,6 +81,15 @@ class UiScreenshotTest {
     fun editorGlass() = editorWithTool(2)
 
     @Test
+    fun editorWater() = editorWithTool(
+        2,
+        settings.copy(
+            clock = ClockSettings(enabled = true, opacity = 0.6f, waterline = 0.55f),
+            widgets = WidgetSettings(),
+        ),
+    )
+
+    @Test
     fun editorWidgets() = editorWithTool(3)
 
     /** Two wallpapers: the item strip, and "Apply to all" in Options. */

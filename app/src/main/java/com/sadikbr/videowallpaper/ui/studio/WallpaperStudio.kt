@@ -801,6 +801,22 @@ private val GLASS_PRESETS = listOf(
 private fun GlassPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> Unit) {
     Column {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
+            item {
+                // The clock sunk in water (works with any of the glass looks).
+                val selected = clock.waterline != null
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .background(if (selected) Brand.Coral else TileColor)
+                        .clickable(role = Role.Switch) {
+                            onClockChange(clock.copy(waterline = if (selected) null else ClockSettings.DEFAULT_WATERLINE))
+                        }
+                        .semantics { this.selected = selected }
+                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                ) {
+                    Text("Water", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                }
+            }
             items(GLASS_PRESETS) { preset ->
                 val selected = abs(clock.opacity - preset.opacity) < 0.02f && abs(clock.fade - preset.fade) < 0.02f
                 Box(
@@ -819,7 +835,16 @@ private fun GlassPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> U
             PanelSlider("Opacity", clock.opacity, ClockSettings.MIN_OPACITY..1f, Modifier.weight(1f)) {
                 onClockChange(clock.copy(opacity = it))
             }
-            PanelSlider("Fade", clock.fade, 0f..1f, Modifier.weight(1f)) { onClockChange(clock.copy(fade = it)) }
+            val waterline = clock.waterline
+            if (waterline != null) {
+                // Slider to the right = more of the clock under water.
+                PanelSlider(
+                    "Water level", 1f - waterline,
+                    (1f - ClockSettings.MAX_WATERLINE)..(1f - ClockSettings.MIN_WATERLINE), Modifier.weight(1f),
+                ) { onClockChange(clock.copy(waterline = 1f - it)) }
+            } else {
+                PanelSlider("Fade", clock.fade, 0f..1f, Modifier.weight(1f)) { onClockChange(clock.copy(fade = it)) }
+            }
         }
     }
 }

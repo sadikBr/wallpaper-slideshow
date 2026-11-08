@@ -29,6 +29,7 @@ data class WallpaperLook(
             .put("showDate", showDate)
             .put("position", position.toDouble())
             .put("autoPlace", autoPlace)
+            .apply { waterline?.let { put("waterline", it.toDouble()) } }
 
         private fun clockFromJson(j: JSONObject, d: ClockSettings) = ClockSettings(
             enabled = j.optBoolean("enabled", d.enabled),
@@ -42,6 +43,7 @@ data class WallpaperLook(
             showDate = j.optBoolean("showDate", d.showDate),
             position = j.optDouble("position", d.position.toDouble()).toFloat(),
             autoPlace = j.optBoolean("autoPlace", d.autoPlace),
+            waterline = if (j.has("waterline")) j.optDouble("waterline").toFloat() else null,
         )
 
         private fun WidgetSettings.toJson() = JSONObject()

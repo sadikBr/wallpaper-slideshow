@@ -46,6 +46,8 @@ enum class TimeFormat(val label: String) {
  * @property fade how much the digits fade out towards their bottom (0 = not at all).
  * @property position top of the time digits, as a share of the screen height (stretching makes
  *   the clock grow downwards from there).
+ * @property waterline for a clock sunk in water: where the water surface crosses the digits, as a
+ *   share of their height from the top; below it the digits ripple and fade. Null for no water.
  * @property autoPlace reframe each photo (or move the clock) so its subject overlaps the time.
  */
 data class ClockSettings(
@@ -60,8 +62,13 @@ data class ClockSettings(
     val showDate: Boolean = true,
     val position: Float = DEFAULT_POSITION,
     val autoPlace: Boolean = true,
+    val waterline: Float? = null,
 ) {
     companion object {
+        const val DEFAULT_WATERLINE = 0.55f
+        const val MIN_WATERLINE = 0.1f
+        const val MAX_WATERLINE = 0.9f
+
         /** Clock colour choices (ARGB). */
         val COLORS = listOf(
             0xFFFFFFFF.toInt(), // White

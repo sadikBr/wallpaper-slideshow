@@ -3,6 +3,12 @@ package com.sadikbr.videowallpaper.clock
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.LightingColorFilter
+import android.graphics.Path
+import kotlin.math.PI
+import kotlin.math.sin
+import kotlin.math.floor
+import kotlin.math.roundToInt
 import android.graphics.Shader
 import android.graphics.Color
 import android.graphics.Paint
@@ -153,6 +159,7 @@ object ClockPainter {
         return ClockLayout(
             timeText, dateText, timePaint, datePaint, centerX, timeBaseline, dateBaseline, stretch,
             timeRect, timeBounds, dateBounds,
+            waterline = clock.waterline?.coerceIn(ClockSettings.MIN_WATERLINE, ClockSettings.MAX_WATERLINE),
         )
     }
 }
@@ -172,12 +179,91 @@ class ClockLayout internal constructor(
     val timeBounds: RectF,
     /** Everything the date draws, in screen pixels; null when the date is hidden. */
     val dateBounds: RectF?,
+    private val waterline: Float? = null,
 ) {
-    /** The big time, stretched upwards from its baseline. With depth it goes behind the subject. */
+    /** The digits seen through water: tinted light blue, more see-through. */
+    private val underwaterPaint by lazy {
+        Paint(timePaint).apply {
+            alpha = (alpha * 0.55f).toInt()
+            colorFilter = LightingColorFilter(0xFFB8E2FF.toInt(), 0x00081420)
+        }
+    }
+
+    /**
+     * The big time, stretched upwards from its baseline. With depth it goes behind the subject.
+     * With a [waterline], the part under the water ripples sideways, sinks a little and fades,
+     * and the surface shimmers where it crosses the digits.
+     */
     fun drawTime(canvas: Canvas) {
+        val line = waterline
+        if (line == null) {
+            drawDigits(canvas, timePaint)
+            return
+        }
+        val height = timeRect.height()
+        val waterY = timeRect.top + height * line
+
+        // Above the water: as normal.
+        canvas.save()
+        canvas.clipRect(timeBounds.left, timeBounds.top - height, timeBounds.right, floor(waterY))
+        drawDigits(canvas, timePaint)
+        canvas.restore()
+
+        // Under the water: thin bands, each pushed sideways by a ripple (refraction), the whole
+        // lower part sunk a little.
+        val amplitude = timeRect.width() * 0.0045f
+        val wavelength = height * 0.3f
+        val sink = height * 0.02f
+        // Whole-pixel bands that meet exactly, so no seams show between them.
+        val band = (height / 240f).roundToInt().coerceAtLeast(1)
+        var y = floor(waterY)
+        val bottom = timeBounds.bottom + sink
+        while (y < bottom) {
+            val depth = ((y - waterY) / height).coerceIn(0f, 1f)
+            val phase = (y - waterY) / wavelength * 2f * PI.toFloat()
+            val dx = amplitude * (0.5f + depth) * (sin(phase) + 0.35f * sin(phase * 2.3f + 1f))
+            canvas.save()
+            canvas.clipRect(timeBounds.left, y, timeBounds.right, y + band)
+            canvas.translate(dx, sink)
+            drawDigits(canvas, underwaterPaint)
+            canvas.restore()
+            y += band
+        }
+
+        // The surface: a soft glow and a thin bright wavy line across the digits.
+        val left = timeRect.left - timeRect.width() * 0.04f
+        val right = timeRect.right + timeRect.width() * 0.04f
+        val surface = Path()
+        val steps = 48
+        for (i in 0..steps) {
+            val x = left + (right - left) * i / steps
+            val wy = waterY + height * 0.012f * sin(i / steps.toFloat() * 7f * PI.toFloat())
+            if (i == 0) surface.moveTo(x, wy) else surface.lineTo(x, wy)
+        }
+        val fadeEnds = LinearGradient(
+            left, 0f, right, 0f,
+            intArrayOf(Color.TRANSPARENT, Color.WHITE, Color.WHITE, Color.TRANSPARENT),
+            floatArrayOf(0f, 0.15f, 0.85f, 1f), Shader.TileMode.CLAMP,
+        )
+        val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = height * 0.06f
+            strokeCap = Paint.Cap.ROUND
+            shader = fadeEnds
+            alpha = 40
+        }
+        canvas.drawPath(surface, glow)
+        val shine = Paint(glow).apply {
+            strokeWidth = (height * 0.008f).coerceAtLeast(1.5f)
+            alpha = 150
+        }
+        canvas.drawPath(surface, shine)
+    }
+
+    private fun drawDigits(canvas: Canvas, paint: Paint) {
         canvas.save()
         canvas.scale(1f, stretch, centerX, timeBaseline)
-        canvas.drawText(timeText, centerX, timeBaseline, timePaint)
+        canvas.drawText(timeText, centerX, timeBaseline, paint)
         canvas.restore()
     }
 

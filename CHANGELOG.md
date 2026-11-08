@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### New
+- **Water clock**: a new "Water" style in the editor's Glass tool sinks the clock in water. Above the waterline the digits look as usual; below it they are tinted, see-through and gently rippled, with a soft shimmer along the surface. A "Water level" slider sets how much of the clock is under water. It works with any of the glass looks, and pairs well with photos of the sea or a lake.
+
 ## [1.2.0] - 2026-11-08
 
 ### New

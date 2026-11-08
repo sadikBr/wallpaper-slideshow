@@ -93,6 +93,7 @@ class SettingsRepository(context: Context) {
         prefs[Keys.CLOCK_STRETCH] = updated.stretch
         prefs[Keys.CLOCK_OPACITY] = updated.opacity
         prefs[Keys.CLOCK_FADE] = updated.fade
+        if (updated.waterline == null) prefs.remove(Keys.CLOCK_WATERLINE) else prefs[Keys.CLOCK_WATERLINE] = updated.waterline
         prefs[Keys.CLOCK_FORMAT] = updated.timeFormat.name
         prefs[Keys.CLOCK_SHOW_DATE] = updated.showDate
         prefs[Keys.CLOCK_POSITION] = updated.position
@@ -213,6 +214,7 @@ class SettingsRepository(context: Context) {
         stretch = prefs[Keys.CLOCK_STRETCH] ?: if (prefs[Keys.CLOCK_WEIGHT] != null) 1f else ClockSettings().stretch,
         opacity = prefs[Keys.CLOCK_OPACITY] ?: if (prefs[Keys.CLOCK_WEIGHT] != null) 1f else ClockSettings().opacity,
         fade = prefs[Keys.CLOCK_FADE] ?: 0f,
+        waterline = prefs[Keys.CLOCK_WATERLINE],
         timeFormat = enumOrDefault(prefs[Keys.CLOCK_FORMAT], TimeFormat.SYSTEM),
         showDate = prefs[Keys.CLOCK_SHOW_DATE] ?: true,
         position = prefs[Keys.CLOCK_POSITION] ?: ClockSettings.DEFAULT_POSITION,
@@ -257,6 +259,7 @@ class SettingsRepository(context: Context) {
         val CLOCK_STRETCH = floatPreferencesKey("clock_stretch")
         val CLOCK_OPACITY = floatPreferencesKey("clock_opacity")
         val CLOCK_FADE = floatPreferencesKey("clock_fade")
+        val CLOCK_WATERLINE = floatPreferencesKey("clock_waterline")
         val PHOTO_FRAMINGS = stringPreferencesKey("photo_framings")
         val WIDGET_WEATHER = booleanPreferencesKey("widget_weather")
         val WIDGET_AIR = booleanPreferencesKey("widget_air_quality")
