@@ -146,7 +146,9 @@ class VideoWallpaperService : WallpaperService() {
                 }
             }
 
-            exoPlayer.setVideoSurface(holder.surface)
+            // Pass the holder, not just its Surface: the player reads the surface size from it.
+            // The "fit" effect needs that size; with a bare Surface nothing would be drawn.
+            exoPlayer.setVideoSurfaceHolder(holder)
             exoPlayer.repeatMode = Player.REPEAT_MODE_ALL
             exoPlayer.shuffleModeEnabled = key.shuffle
             exoPlayer.setMediaItems(key.videos.map { buildMediaItem(it, key.clipSeconds) })
@@ -180,10 +182,7 @@ class VideoWallpaperService : WallpaperService() {
         }
 
         private fun releasePlayer() {
-            player?.let {
-                it.clearVideoSurface()
-                it.release()
-            }
+            player?.release()
             player = null
             builtFor = null
         }
