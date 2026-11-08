@@ -70,7 +70,8 @@ data class ClockSettings(
 ) {
     companion object {
         const val DEFAULT_WATERLINE = 0.55f
-        const val MIN_WATERLINE = 0.1f
+        /** At 0 the whole clock is under water. */
+        const val MIN_WATERLINE = 0f
         const val MAX_WATERLINE = 0.9f
         const val MAX_WATER_GAP = 0.5f
 

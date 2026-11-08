@@ -90,6 +90,12 @@ class UiScreenshotTest {
     )
 
     @Test
+    fun editorFullyUnderWater() = editorWithTool(
+        2,
+        settings.copy(clock = ClockSettings(enabled = true, opacity = 0.6f, waterline = 0f), widgets = WidgetSettings()),
+    )
+
+    @Test
     fun editorWidgets() = editorWithTool(3)
 
     /** Two wallpapers: the item strip, and "Apply to all" in Options. */

@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### New
-- **Water clock**: a new Water button in the editor's Glass tool sinks the clock in water. Above the surface the digits look as usual; below it they are drawn like glass under water: a see-through fill tinted by the water, a thin bright outline and a soft dark shadow, so they stay readable over bright and dark water alike, gently rippled, sunk a little and fading slightly with depth. A "Water level" slider sets how much of the clock is under water, and a "Gap" slider hides the digits just under the surface, for split above/under water photos: they enter the water at the waterline and show again where the photo's underwater view begins.
+- **Water clock**: a new Water button in the editor's Glass tool sinks the clock in water. Above the surface the digits look as usual; below it they are drawn like glass under water: a see-through fill tinted by the water, a thin bright outline and a soft dark shadow, so they stay readable over bright and dark water alike, gently rippled, sunk a little and fading slightly with depth. A "Water level" slider sets how much of the clock is under water, up to all of it, and a "Gap" slider hides the digits just under the surface, for split above/under water photos: they enter the water at the waterline and show again where the photo's underwater view begins.
 
 ### Fixed
 - In the editor, moving a widget (or the clock) no longer undoes earlier changes to the clock (or the widgets).

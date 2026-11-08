@@ -153,6 +153,8 @@ object ClockPainter {
             timeBounds.left -= extra
             timeBounds.right += extra
             timeBounds.bottom += extra
+            // Fully under water: the shadow also spreads above the digits.
+            if (clock.waterline <= 0f) timeBounds.top -= extra
         }
         var dateBaseline = 0f
         var dateBounds: RectF? = null
@@ -221,8 +223,8 @@ class ClockLayout internal constructor(
         canvas.restore()
 
         // Under the water: a picture made once (per minute and look) and reused for every frame.
-        val underwater = UnderwaterDigits.get(waterKey ?: this) { renderUnderwater(waterY) } ?: return
-        canvas.drawBitmap(underwater.bitmap, timeRect.left + underwater.left, waterY, null)
+        val underwater = UnderwaterDigits.get(waterKey ?: this) { renderUnderwater(waterY, line <= 0f) } ?: return
+        canvas.drawBitmap(underwater.bitmap, timeRect.left + underwater.left, waterY + underwater.top, null)
     }
 
     /**
@@ -233,7 +235,7 @@ class ClockLayout internal constructor(
      * softly blurred, sunk a little (so they don't line up with the part above the surface, like
      * refraction), ripple sideways, and fade a little with depth.
      */
-    private fun renderUnderwater(waterY: Float): UnderwaterDigits.Picture? {
+    private fun renderUnderwater(waterY: Float, fullyUnder: Boolean): UnderwaterDigits.Picture? {
         val height = timeRect.height()
         val amplitude = timeRect.width() * 0.0045f
         val sink = height * 0.025f
@@ -241,7 +243,10 @@ class ClockLayout internal constructor(
         val pad = ceil(amplitude + shadowBlur * 2f).toInt() + 2
         val left = floor(timeBounds.left) - pad
         val width = ceil(timeBounds.right - timeBounds.left).toInt() + 2 * pad
-        val rows = ceil(timeBounds.bottom + sink + shadowBlur * 2f - waterY).toInt()
+        // With no surface crossing the digits, the picture starts above them, so the shadow
+        // isn't cut off; otherwise it starts at the surface.
+        val startY = if (fullyUnder) floor(timeBounds.top) else waterY
+        val rows = ceil(timeBounds.bottom + sink + shadowBlur * 2f - startY).toInt()
         if (width <= 0 || rows <= 0) return null
 
         // Readable even for the faintest glass looks.
@@ -276,7 +281,7 @@ class ClockLayout internal constructor(
         val flat = Bitmap.createBitmap(width, rows, Bitmap.Config.ARGB_8888)
         Canvas(flat).apply {
             save()
-            translate(-left, -waterY + sink)
+            translate(-left, -startY + sink)
             save()
             translate(0f, height * 0.015f)
             drawDigits(this, shadow)
@@ -286,7 +291,8 @@ class ClockLayout internal constructor(
             restore()
             // Hidden between the waterline and where the underwater view begins (the gap), then
             // fading a little with depth.
-            val gap = height * waterGap
+            // (Fully under water with no gap, nothing is hidden, not even the shadow above.)
+            val gap = if (fullyUnder && waterGap <= 0f) 0f else (waterY - startY) + height * waterGap
             if (gap > 0f) drawRect(0f, 0f, width.toFloat(), gap, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) })
             drawRect(
                 0f, gap, width.toFloat(), rows.toFloat(),
@@ -321,7 +327,7 @@ class ClockLayout internal constructor(
             y = bottom
         }
         flat.recycle()
-        return UnderwaterDigits.Picture(rippled, left - timeRect.left)
+        return UnderwaterDigits.Picture(rippled, left - timeRect.left, startY - waterY)
     }
 
     private fun drawDigits(canvas: Canvas, paint: Paint) {
@@ -339,8 +345,8 @@ class ClockLayout internal constructor(
 
 /** The latest underwater clock pictures, shared by the wallpaper and the in-app previews. */
 private object UnderwaterDigits {
-    /** [left] is relative to the left of the time; the top is at the water surface. */
-    class Picture(val bitmap: Bitmap, val left: Float)
+    /** [left] is relative to the left of the time, [top] to the water surface. */
+    class Picture(val bitmap: Bitmap, val left: Float, val top: Float)
 
     private const val SIZE = 4
     private val cache = LinkedHashMap<Any, Picture?>()
