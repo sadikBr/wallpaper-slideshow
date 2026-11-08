@@ -237,7 +237,10 @@ def violet_peaks():
     return svg(body, defs), svg(mask)
 
 
-def northern_lights():
+def northern_lights(phase=0.0):
+    """`phase` (0..1) animates the aurora for the Aurora Live loop; 0 is the still wallpaper."""
+    a = 2 * math.pi * phase
+    w1 = lambda base, amp, k: base + amp * math.sin(a * k + base / 300)
     defs = GRAIN + """
 <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
   <stop offset="0" stop-color="#030B17"/>
@@ -278,13 +281,18 @@ def northern_lights():
   <stop offset="0" stop-color="#03111A"/><stop offset="1" stop-color="#010609"/>
 </linearGradient>
 """
+    # Control points sway with the phase; at phase 0 they are the original still curve.
+    y1, y2, y3, y4 = w1(1150, 60, 1), w1(700, 90, 1), w1(1200, 70, 2), w1(820, 80, 1)
+    y5, y6 = w1(520, 70, 2), w1(760, 60, 1)
+    z1, z2, z3, z4 = w1(620, 50, 1), w1(420, 70, 2), w1(820, 60, 1), w1(560, 60, 2)
+    shimmer = 0.85 + 0.12 * math.sin(a * 3)
     aurora = (
-        "<g filter='url(#glow)' opacity='0.9'>"
-        "<path d='M-100,1150 C250,700 520,1200 820,820 S1250,520 1560,760' stroke='url(#aur1)' stroke-width='170' fill='none'/>"
-        "<path d='M-100,620 C300,420 600,820 900,560 S1300,300 1560,460' stroke='url(#aur2)' stroke-width='120' fill='none' opacity='0.7'/>"
+        f"<g filter='url(#glow)' opacity='{shimmer:.2f}'>"
+        f"<path d='M-100,{y1:.0f} C250,{y2:.0f} 520,{y3:.0f} 820,{y4:.0f} S1250,{y5:.0f} 1560,{y6:.0f}' stroke='url(#aur1)' stroke-width='170' fill='none'/>"
+        f"<path d='M-100,{z1:.0f} C300,{z2:.0f} 600,{z3:.0f} 900,{z4:.0f} S1300,300 1560,460' stroke='url(#aur2)' stroke-width='120' fill='none' opacity='0.7'/>"
         "</g>"
         "<g filter='url(#rays)' opacity='0.85'>"
-        "<path d='M-100,1150 C250,700 520,1200 820,820 S1250,520 1560,760 L1560,260 S1250,20 820,320 S250,200 -100,650 Z' fill='url(#aur1)'/>"
+        f"<path d='M-100,{y1:.0f} C250,{y2:.0f} 520,{y3:.0f} 820,{y4:.0f} S1250,{y5:.0f} 1560,{y6:.0f} L1560,260 S1250,20 820,320 S250,200 -100,650 Z' fill='url(#aur1)'/>"
         "</g>"
     )
     peaks = path_of(range_profile(51, 2250, 560, 4, 0.18))

@@ -8,14 +8,14 @@
 ### Added
 - **Wallpaper editor**: a full-screen live preview you edit by hand. Drag the clock to move it, pinch it to resize, pull the handle under it to stretch the digits taller, and pinch or drag the photo to frame it (double-tap resets). A bottom tray has live font samples, colours (including one matched to the photo), glass effects (Solid, Glass, Frost, Ghost, Mist, plus opacity and fade) and clock options.
 - **Clock fonts** for tall, iOS-style clocks: Antonio, Antonio Bold, Oswald, Bebas and Big Shoulders (SIL Open Font License), alongside the system fonts. The clock is sized by width and can be stretched.
-- **Gallery** of seven built-in wallpapers made for the depth clock: Violet Peaks, Northern Lights, Golden Palm, Blue Hour (with exact subject cut-outs), Silk, Prism and the animated Prism Flow.
+- **Gallery** of eight built-in wallpapers made for the depth clock: Violet Peaks, Northern Lights, Golden Palm, Blue Hour (with exact subject cut-outs), Silk, Prism, and two animated loops: Aurora Live (with depth) and Prism Flow.
+- **Depth for videos**: each video is analysed once in the background (8 cut-outs per second, first minute; about a minute of work, with progress on its tile), then its subject stays in front of the clock as it plays.
 - **Automatic depth framing**: like iOS, a photo is zoomed and moved so its subject reaches into the clock, which stays near the top. Only the time goes behind the subject; the date stays in front.
 - **Depth clock**: the wallpaper can draw its own large clock, and in photos with a clear subject (people, pets, buildings, objects) the subject stands in front of the time, like iOS depth-effect wallpapers.
   - Subjects are found on the phone with Google's ML Kit (no upload); each photo is analysed once and the result is saved.
   - Like iOS, the effect is skipped for a photo when the subject would hide too much of the time.
   - Choose the clock's colour, size, style (thin, regular, bold), 12/24-hour time, date line and position.
   - Move the clock for a single photo with **Adjust clock** in that photo's menu, with a live preview.
-  - Videos show the clock in front for now; a depth effect for videos is planned.
 - The preview at the top of the app shows the clock and depth effect.
 
 Note: the phone's own lock-screen clock is still drawn on top of any wallpaper. To avoid two clocks on the lock screen, hide or shrink it (on Samsung: Good Lock › LockStar). The home screen has no system clock, so the effect works there as is.

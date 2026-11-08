@@ -20,7 +20,7 @@ object BuiltInWallpapers {
         val name: String,
         /** File name in `assets/wallpapers/`. */
         val file: String,
-        /** Ready-made subject cut-out, if the scene has a subject. */
+        /** Ready-made subject cut-out (per-frame for videos), if the scene has a subject. */
         val mask: String? = null,
         /** Still picture for the gallery (videos only; photos use [file]). */
         val preview: String? = null,
@@ -34,6 +34,7 @@ object BuiltInWallpapers {
         Wallpaper("northern_lights", "Northern Lights", "northern_lights.webp", mask = "northern_lights_mask.png"),
         Wallpaper("golden_palm", "Golden Palm", "golden_palm.webp", mask = "golden_palm_mask.png"),
         Wallpaper("blue_hour", "Blue Hour", "blue_hour.webp", mask = "blue_hour_mask.png"),
+        Wallpaper("aurora_live", "Aurora Live", "aurora_live.mp4", mask = "aurora_live.vmask", preview = "aurora_live_preview.webp"),
         Wallpaper("prism_flow", "Prism Flow", "prism_flow.mp4", preview = "prism_flow_preview.webp"),
         Wallpaper("silk", "Silk", "silk.webp"),
         Wallpaper("prism", "Prism", "prism.webp"),
@@ -62,8 +63,15 @@ object BuiltInWallpapers {
             temp.renameTo(target)
         }
         val uri = Uri.fromFile(target).toString()
-        wallpaper.mask?.let { maskFile ->
-            context.assets.open("$ASSET_DIR/$maskFile").use { DepthMasks.importMask(context, uri, it) }
+        val maskFile = wallpaper.mask
+        if (maskFile != null) {
+            context.assets.open("$ASSET_DIR/$maskFile").use {
+                // Videos come with per-frame cut-outs, photos with a single one.
+                if (wallpaper.isVideo) DepthMasks.importVideoMask(context, uri, it) else DepthMasks.importMask(context, uri, it)
+            }
+        } else {
+            // Abstract scenes have no subject; no need to analyse them.
+            DepthMasks.markNoSubject(context, uri)
         }
         return uri
     }

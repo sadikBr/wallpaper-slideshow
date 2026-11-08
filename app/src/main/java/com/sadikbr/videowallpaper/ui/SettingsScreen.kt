@@ -85,6 +85,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     }
 
     val depthStates by viewModel.depthStates.collectAsStateWithLifecycle()
+    val depthProgress by viewModel.depthProgress.collectAsStateWithLifecycle()
     /** The item the editor is open for ("" = no particular one), or null when closed. */
     var studioFor by remember { mutableStateOf<String?>(null) }
 
@@ -200,6 +201,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     onMoveLater = { viewModel.moveItem(index, index + 1) },
                     onRemove = { viewModel.removeItem(uri) },
                     depthState = if (current.clock.enabled) depthStates[uri] else null,
+                    depthProgress = depthProgress[uri],
                     onEdit = { studioFor = uri },
                     modifier = Modifier.animateItem(),
                 )
@@ -245,14 +247,15 @@ private fun depthSummary(
     loader: MediaInfoLoader,
     states: Map<String, DepthMasks.State>,
 ): String {
-    val photos = media.filter { loader.cached(it)?.kind == MediaKind.IMAGE }
-    if (photos.isEmpty()) return "Add photos for the depth effect; videos show the clock in front"
-    val ready = photos.count { states[it] == DepthMasks.State.READY }
-    val processing = photos.count { states[it] == DepthMasks.State.PROCESSING }
+    if (media.isEmpty()) return "Add photos or videos for the depth effect"
+    val ready = media.count { states[it] == DepthMasks.State.READY }
+    val processing = media.count { states[it] == DepthMasks.State.PROCESSING }
+    val videos = media.count { loader.cached(it)?.kind == MediaKind.VIDEO }
+    val items = if (videos == media.size) "videos" else if (videos == 0) "photos" else "items"
     return if (processing > 0) {
-        "Finding subjects… ($ready of ${photos.size} photos ready)"
+        "Finding subjects… ($ready of ${media.size} $items ready; videos take about a minute)"
     } else {
-        "Depth effect ready on $ready of ${photos.size} photos"
+        "Depth effect ready on $ready of ${media.size} $items"
     }
 }
 

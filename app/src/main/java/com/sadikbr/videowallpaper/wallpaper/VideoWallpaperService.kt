@@ -38,6 +38,7 @@ import java.util.concurrent.Executors
 import android.text.format.DateFormat
 import com.sadikbr.videowallpaper.clock.ClockFonts
 import com.sadikbr.videowallpaper.data.DepthMasks
+import com.sadikbr.videowallpaper.data.VideoMaskSequence
 import com.sadikbr.videowallpaper.data.TimeFormat
 import kotlin.math.roundToInt
 
@@ -182,7 +183,7 @@ class VideoWallpaperService : WallpaperService() {
             }
             if (current.clock.enabled) {
                 // Cut-outs are made once per photo; ones already done are skipped.
-                DepthMasks.ensure(this@VideoWallpaperService, current.media.filter { kindOf(it) == MediaKind.IMAGE })
+                DepthMasks.ensure(this@VideoWallpaperService, current.media)
             }
             if (current.media.isEmpty()) {
                 releasePlayer()
@@ -285,13 +286,20 @@ class VideoWallpaperService : WallpaperService() {
         /** Re-sends the cut-out of the photo on screen, e.g. once it has been made. */
         private fun reloadCurrentMask() {
             val uri = currentUri ?: return
-            if (kindOf(uri) != MediaKind.IMAGE) return
             val target = renderer ?: return
+            val isImage = kindOf(uri) == MediaKind.IMAGE
             scope.launch(activationDispatcher) {
-                val mask = maskFor(uri)
-                if (mask != null) target.setCurrentMask(mask)
+                if (isImage) {
+                    maskFor(uri)?.let(target::setCurrentMask)
+                } else {
+                    videoMasksFor(uri)?.let(target::setCurrentVideoMasks)
+                }
             }
         }
+
+        /** Loads the per-frame cut-outs of video [uri] if the depth clock is on (call off the main thread). */
+        private fun videoMasksFor(uri: String): VideoMaskSequence? =
+            if (settings?.clock?.enabled == true) DepthMasks.loadVideoMasks(this@VideoWallpaperService, uri) else null
 
         /** Settings that can change on a running player without rebuilding the playlist. */
         private fun applyLiveSettings(exoPlayer: ExoPlayer, current: WallpaperSettings) {
@@ -347,7 +355,7 @@ class VideoWallpaperService : WallpaperService() {
                 val framing = settings?.photoFramings?.get(uri)
                 // Queued in order: the renderer pairs each photo hand-over with the next decoded photo.
                 scope.launch(activationDispatcher) {
-                    if (isImage) target.activateImage(maskFor(uri), clockOffset, framing) else target.activateVideo()
+                    if (isImage) target.activateImage(maskFor(uri), clockOffset, framing) else target.activateVideo(videoMasksFor(uri))
                 }
             }
 
@@ -411,13 +419,17 @@ class VideoWallpaperService : WallpaperService() {
                 format !== lastFormat
             lastPresentationTimeUs = presentationTimeUs
             lastFormat = format
-            if (!isNewItem) return
+            if (!isNewItem) {
+                target.onVideoFramePts(presentationTimeUs)
+                return
+            }
 
             // The decoder rotates the picture itself, so swap the sides for portrait videos.
             val rotated = format.rotationDegrees == 90 || format.rotationDegrees == 270
             val width = ((if (rotated) format.height else format.width) * format.pixelWidthHeightRatio).roundToInt()
             val height = if (rotated) format.width else format.height
             target.onVideoItemStarting(width, height)
+            target.onVideoFramePts(presentationTimeUs)
         }
     }
 

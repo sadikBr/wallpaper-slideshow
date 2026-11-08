@@ -33,18 +33,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val settings: StateFlow<WallpaperSettings?> = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Progress of the subject cut-outs used by the depth clock, per photo URI. */
+    /** Progress of the subject cut-outs used by the depth clock, per item URI. */
     val depthStates: StateFlow<Map<String, DepthMasks.State>> = DepthMasks.states
 
+    /** How far along each video's analysis is (0..1). */
+    val depthProgress: StateFlow<Map<String, Float>> = DepthMasks.progress
+
     init {
-        // With the depth clock on, make sure every photo has its cut-out (done once per photo).
+        // With the depth clock on, make sure every item has its cut-out (done once per item).
         viewModelScope.launch(Dispatchers.IO) {
             repository.settings
                 .map { if (it.clock.enabled) it.media else emptyList() }
                 .distinctUntilChanged()
                 .collect { media ->
-                    val photos = media.filter { mediaInfoLoader.load(it).kind == MediaKind.IMAGE }
-                    DepthMasks.ensure(getApplication(), photos)
+                    // Photos and videos; videos take about a minute each and go after the photos.
+                    DepthMasks.ensure(getApplication(), media)
                 }
         }
     }

@@ -29,6 +29,7 @@ import com.sadikbr.videowallpaper.clock.toBox
 import com.sadikbr.videowallpaper.clock.Framing
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.PhotoFraming
+import com.sadikbr.videowallpaper.data.VideoMaskSequence
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TransitionStyle
 import java.nio.ByteBuffer
@@ -72,6 +73,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var videoProgram = 0
     private var imageProgram = 0
     private var maskedImageProgram = 0
+    private var maskedVideoProgram = 0
+    private var videoMaskTexture = 0
     private var clockProgram = 0
     private var videoTexture = 0
     private var imageTexture = 0
@@ -147,6 +150,19 @@ internal class SlideshowRenderer(windowSurface: Surface) {
 
 
 
+    // Video depth: the cut-outs of the video on screen, picked per frame by its timestamp.
+    private var videoMasks: VideoMaskSequence? = null
+    private var pendingVideoMasks: VideoMaskSequence? = null
+    private var hasPendingVideoMasks = false
+    private var lastVideoItemStartNs = 0L
+
+    /** Timestamps of video frames handed to the SurfaceTexture, in order, not yet latched. */
+    private val framePts = ArrayDeque<Long>()
+    private var videoPts = 0L
+    private var videoMaskIndex = -1
+    private var videoMaskBytes: ByteArray? = null
+    private var videoDepthAllowed = false
+
     /** Cut-out and clock offset for the photo that becomes current next. */
     private var nextImageMask: Bitmap? = null
     private var nextImageClockOffset: Float? = 0f
@@ -199,9 +215,17 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     /** The current item is now a video: show its frames, including any that arrived early. */
-    fun activateVideo() = post {
+    fun activateVideo(masks: VideoMaskSequence?) = post {
         active = Content.VIDEO
         waitingForImage = false
+        if (content == Content.VIDEO && System.nanoTime() - lastVideoItemStartNs < MASK_MATCH_WINDOW_NS) {
+            // The video's first frame is already on screen: its cut-outs apply right away.
+            setVideoMasks(masks)
+        } else {
+            // Applied when the video's first frame arrives.
+            pendingVideoMasks = masks
+            hasPendingVideoMasks = true
+        }
         val queued = pendingVideoFrames
         pendingVideoFrames = 0
         repeat(queued) { latchVideoFrame() }
@@ -219,11 +243,33 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         nextVideoHeight = height
     }
 
+    /**
+     * Called (from the player's thread) just before each video frame is released, with its
+     * time within its item. Used to pick that frame's subject cut-out.
+     */
+    fun onVideoFramePts(presentationTimeUs: Long) = post { framePts.addLast(presentationTimeUs) }
+
+    /** Cut-outs became available for the video on screen. */
+    fun setCurrentVideoMasks(masks: VideoMaskSequence?) = post {
+        if (content == Content.VIDEO) {
+            setVideoMasks(masks)
+            drawUnlessAnimating()
+        }
+    }
+
+    private fun setVideoMasks(masks: VideoMaskSequence?) {
+        videoMasks = masks
+        videoMaskIndex = -1
+        videoMaskBytes = null
+        videoDepthAllowed = false
+    }
+
     /** Forgets photos and frames handed over early, e.g. after the playlist was rebuilt. */
     fun clearPending() = post {
         pendingImages.clear()
         waitingForImage = false
         drainVideoFrames()
+        framePts.clear()
         videoItemStarting = false
     }
 
@@ -273,7 +319,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         pendingImages.clear()
         waitingForImage = false
         drainVideoFrames()
+        framePts.clear()
         videoItemStarting = false
+        setVideoMasks(null)
         drawUnlessAnimating()
     }
 
@@ -313,7 +361,13 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             videoItemStarting = false
             videoWidth = nextVideoWidth
             videoHeight = nextVideoHeight
+            lastVideoItemStartNs = System.nanoTime()
+            // A new video: its own cut-outs if they were handed over already, otherwise none yet.
+            setVideoMasks(if (hasPendingVideoMasks) pendingVideoMasks else null)
+            pendingVideoMasks = null
+            hasPendingVideoMasks = false
         }
+        framePts.removeFirstOrNull()?.let { videoPts = it }
         surfaceTexture.updateTexImage()
         surfaceTexture.getTransformMatrix(videoMatrix)
         content = Content.VIDEO
@@ -321,7 +375,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     private fun drainVideoFrames() {
-        repeat(pendingVideoFrames) { runCatching { surfaceTexture.updateTexImage() } }
+        repeat(pendingVideoFrames) {
+            runCatching { surfaceTexture.updateTexImage() }
+            framePts.removeFirstOrNull()
+        }
         pendingVideoFrames = 0
     }
 
@@ -518,6 +575,30 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             }
         }
 
+        if (hasContent && content == Content.VIDEO) {
+            val videoRect = RectF(
+                viewWidth / 2f * (1f + (centerX - offsetX) - halfWidth),
+                viewHeight / 2f * (1f - centerY - halfHeight),
+                viewWidth / 2f * (1f + (centerX - offsetX) + halfWidth),
+                viewHeight / 2f * (1f - centerY + halfHeight),
+            )
+            if (prepareVideoMask(layout, videoRect)) {
+                // The video's subject in front of the time, through this frame's cut-out.
+                drawQuad(
+                    program = maskedVideoProgram,
+                    textureTarget = GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+                    texture = videoTexture,
+                    texMatrix = videoMatrix,
+                    left = centerX - halfWidth,
+                    right = centerX + halfWidth,
+                    bottom = centerY - halfHeight,
+                    top = centerY + halfHeight,
+                    alpha = alpha,
+                    maskTexture = videoMaskTexture,
+                )
+            }
+        }
+
         layout.dateBounds?.let { drawClockPart(dateTexture, it, viewWidth, viewHeight, alpha, offsetX) }
     }
 
@@ -635,6 +716,39 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         return depthAllowed
     }
 
+    /**
+     * Uploads the cut-out for the video frame on screen (when it changed) and decides whether
+     * its subject may cover the time. Returns whether to draw the subject.
+     */
+    private fun prepareVideoMask(layout: ClockLayout, videoRect: RectF): Boolean {
+        val masks = videoMasks ?: return false
+        val index = masks.indexAt(videoPts)
+        if (index < 0) return false // Past the analysed part of the video.
+        if (index != videoMaskIndex) {
+            val bytes = masks.frame(index)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, videoMaskTexture)
+            GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1)
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_LUMINANCE, masks.width, masks.height, 0,
+                GLES20.GL_LUMINANCE, GLES20.GL_UNSIGNED_BYTE, ByteBuffer.wrap(bytes),
+            )
+            videoMaskIndex = index
+            videoMaskBytes = bytes
+            // Same rule as photos, with a small dead zone so depth doesn't flicker on and off.
+            val covered = DepthPlacement.coverage(layout.timeRect.toBox(), videoRect.toBox()) { u, v ->
+                val x = (u * (masks.width - 1)).roundToInt()
+                val y = (v * (masks.height - 1)).roundToInt()
+                (bytes[y * masks.width + x].toInt() and 0xFF) / 255f
+            }
+            videoDepthAllowed = if (videoDepthAllowed) {
+                covered <= DepthPlacement.MAX_COVERED + 0.1f
+            } else {
+                covered <= DepthPlacement.MAX_COVERED
+            }
+        }
+        return videoDepthAllowed
+    }
+
     private fun uploadMask(mask: Bitmap?) {
         subjectMask = mask
         depthKey = null
@@ -706,6 +820,9 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         GLES20.glEnableVertexAttribArray(texCoord)
 
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uTexMatrix"), 1, false, texMatrix, 0)
+        // Cut-outs are stored top row first, like bitmaps (only the masked video shader has this).
+        val maskMatrix = GLES20.glGetUniformLocation(program, "uMaskMatrix")
+        if (maskMatrix >= 0) GLES20.glUniformMatrix4fv(maskMatrix, 1, false, FLIP_VERTICAL, 0)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uAlpha"), alpha.coerceIn(0f, 1f))
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(textureTarget, texture)
@@ -784,6 +901,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         videoProgram = buildProgram(VERTEX_SHADER, VIDEO_FRAGMENT_SHADER)
         imageProgram = buildProgram(VERTEX_SHADER, IMAGE_FRAGMENT_SHADER)
         maskedImageProgram = buildProgram(VERTEX_SHADER, MASKED_IMAGE_FRAGMENT_SHADER)
+        maskedVideoProgram = buildProgram(MASKED_VIDEO_VERTEX_SHADER, MASKED_VIDEO_FRAGMENT_SHADER)
+        videoMaskTexture = createTexture(GLES20.GL_TEXTURE_2D)
         clockProgram = buildProgram(VERTEX_SHADER, PREMULTIPLIED_FRAGMENT_SHADER)
         videoTexture = createTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES)
         imageTexture = createTexture(GLES20.GL_TEXTURE_2D)
@@ -812,6 +931,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             GLES20.glDeleteProgram(videoProgram)
             GLES20.glDeleteProgram(imageProgram)
             GLES20.glDeleteProgram(maskedImageProgram)
+            GLES20.glDeleteProgram(maskedVideoProgram)
+            GLES20.glDeleteTextures(1, intArrayOf(videoMaskTexture), 0)
             GLES20.glDeleteProgram(clockProgram)
             snapshot.delete()
             spare.delete()
@@ -949,6 +1070,39 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             uniform float uAlpha;
             void main() {
                 gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha);
+            }
+        """
+
+        /** How long after a video starts its cut-outs may still arrive and apply to it. */
+        const val MASK_MATCH_WINDOW_NS = 1_500_000_000L
+
+        /** Video coordinates go through the SurfaceTexture matrix; cut-out coordinates are flipped. */
+        const val MASKED_VIDEO_VERTEX_SHADER = """
+            attribute vec4 aPosition;
+            attribute vec4 aTexCoord;
+            uniform mat4 uTexMatrix;
+            uniform mat4 uMaskMatrix;
+            varying vec2 vTexCoord;
+            varying vec2 vMaskCoord;
+            void main() {
+                gl_Position = aPosition;
+                vTexCoord = (uTexMatrix * aTexCoord).xy;
+                vMaskCoord = (uMaskMatrix * aTexCoord).xy;
+            }
+        """
+
+        /** The video frame drawn only where this frame's cut-out is white. */
+        const val MASKED_VIDEO_FRAGMENT_SHADER = """
+            #extension GL_OES_EGL_image_external : require
+            precision mediump float;
+            varying vec2 vTexCoord;
+            varying vec2 vMaskCoord;
+            uniform samplerExternalOES sTexture;
+            uniform sampler2D sMask;
+            uniform float uAlpha;
+            void main() {
+                float subject = texture2D(sMask, vMaskCoord).r;
+                gl_FragColor = vec4(texture2D(sTexture, vTexCoord).rgb, uAlpha * subject);
             }
         """
 

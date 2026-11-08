@@ -68,6 +68,8 @@ fun MediaTile(
     /** Opens the wallpaper editor for this item. */
     onEdit: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Analysis progress (0..1) of a video being processed, if known. */
+    depthProgress: Float? = null,
 ) {
     val info by rememberMediaInfo(uri, loader)
     var menuOpen by remember { mutableStateOf(false) }
@@ -159,7 +161,7 @@ fun MediaTile(
                 Text("$position", style = MaterialTheme.typography.labelMedium, color = Color.White)
             }
 
-            if (info?.kind == MediaKind.IMAGE) {
+            if (info != null) {
                 when (depthState) {
                     DepthMasks.State.READY -> Icon(
                         AppIcons.Layers,
@@ -172,17 +174,32 @@ fun MediaTile(
                             .background(Color.Black.copy(alpha = 0.55f), CircleShape)
                             .padding(4.dp),
                     )
-                    DepthMasks.State.PROCESSING -> CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(6.dp)
-                            .size(22.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                            .padding(4.dp)
-                            .semantics { contentDescription = "Finding the subject" },
-                    )
+                    DepthMasks.State.PROCESSING -> if (depthProgress != null) {
+                        // Videos take a while: show how far along the analysis is.
+                        Text(
+                            "${(depthProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(6.dp)
+                                .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                .semantics { contentDescription = "Finding the subject in the video" },
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(6.dp)
+                                .size(22.dp)
+                                .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                .padding(4.dp)
+                                .semantics { contentDescription = "Finding the subject" },
+                        )
+                    }
                     else -> Unit
                 }
             }
