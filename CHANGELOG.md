@@ -3,6 +3,7 @@
 ## [1.1.0] - 2026-11-08
 
 ### Changed
+- **Redesigned home screen**: a dark, picture-first design. Your wallpapers are a swipeable carousel of live previews, each with its own clock and widgets; edit, reorder or remove the one in the middle, set the wallpaper with one big button, see the slideshow settings at a glance (tap a tile for the full settings in a sheet), and explore the built-in wallpapers. Soft animated glows, springy buttons and a friendly empty state.
 - **New name: Wallpaper Slideshow** (previously Video Slideshow), with a new look: a new app icon with a themed (single-colour) version for Android 13+, a matching colour palette across the app, a gradient header card, and a branded launch screen. Updating keeps your settings and your current wallpaper.
 
 ### Added

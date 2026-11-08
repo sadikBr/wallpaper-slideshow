@@ -21,9 +21,10 @@ import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import com.sadikbr.videowallpaper.data.WidgetSettings
-import com.sadikbr.videowallpaper.ui.components.ClockCard
-import com.sadikbr.videowallpaper.ui.components.HeroCard
-import com.sadikbr.videowallpaper.ui.components.PlaybackCard
+import com.sadikbr.videowallpaper.data.WidgetSnapshot
+import com.sadikbr.videowallpaper.ui.home.HomeActions
+import com.sadikbr.videowallpaper.ui.home.HomeScreen
+import com.sadikbr.videowallpaper.ui.home.HomeState
 import com.sadikbr.videowallpaper.ui.studio.WallpaperStudio
 import com.sadikbr.videowallpaper.ui.theme.WallpaperSlideshowTheme
 import org.junit.Rule
@@ -59,6 +60,7 @@ class UiScreenshotTest {
         return MediaInfoLoader(paparazzi.context).apply {
             prime(photoUri, MediaInfo(MediaKind.IMAGE, "Violet Peaks", null, bitmap, available = true))
             prime(secondUri, MediaInfo(MediaKind.IMAGE, "Second photo", null, bitmap, available = true))
+            prime("file:///sample/third.png", MediaInfo(MediaKind.IMAGE, "Third photo", null, bitmap, available = true))
         }
     }
 
@@ -108,38 +110,40 @@ class UiScreenshotTest {
         }
     }
 
-    @Test
-    fun mainScreenCards() {
-        val loader = loaderWithSamplePhoto()
+    private val noActions = HomeActions(
+        onAdd = {}, onEdit = {}, onRemove = {}, onMove = { _, _ -> }, onApply = {},
+        onClockEverywhere = {}, onOpenSlideshowSettings = {}, builtInUri = { "" }, onToggleBuiltIn = {},
+    )
+
+    private fun home(settings: WallpaperSettings, loader: MediaInfoLoader) {
         paparazzi.snapshot {
             WallpaperSlideshowTheme {
-                Column(
-                    Modifier
-                        .background(MaterialTheme.colorScheme.background)
-                        .padding(16.dp),
-                ) {
-                    HeroCard(
+                HomeScreen(
+                    state = HomeState(
                         settings = settings,
-                        loader = loader,
                         wallpaperActive = true,
-                        use24Hour = true,
                         depthStates = emptyMap(),
-                        onApply = {},
-                    )
-                    ClockCard(clock = settings.clock, depthSummary = null, onUpdate = {}, onCustomize = {})
-                    PlaybackCard(
-                        settings = settings,
-                        onShuffleChange = {},
-                        onMutedChange = {},
-                        onClipSecondsChange = {},
-                        onImageSecondsChange = {},
-                        onSpeedChange = {},
-                        onScaleModeChange = {},
-                        onTransitionChange = {},
-                        onTransitionMsChange = {},
-                    )
-                }
+                        depthProgress = emptyMap(),
+                        widgetSnapshot = WidgetSnapshot(batteryPercent = 76),
+                        systemUses24Hour = true,
+                    ),
+                    actions = noActions,
+                    loader = loader,
+                )
             }
         }
     }
+
+    @Test
+    fun homeWithWallpapers() = home(settings.copy(media = listOf(photoUri, secondUri, "file:///sample/third.png")), loaderWithSamplePhoto())
+
+    /** The whole scrolling page, on a very tall screen. */
+    @Test
+    fun homeFullPage() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 5200))
+        home(settings.copy(media = listOf(photoUri, secondUri)), loaderWithSamplePhoto())
+    }
+
+    @Test
+    fun homeEmpty() = home(WallpaperSettings(), MediaInfoLoader(paparazzi.context))
 }
