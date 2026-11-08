@@ -63,7 +63,7 @@ To change the slideshow later, open the app again (or the wallpaper's *Settings*
 ## Notes
 
 - Some phone makers (for example Samsung) only allow live wallpapers on the home screen.
-- The phone's own lock-screen clock is always drawn above any wallpaper. With the depth clock on, hide or shrink it to avoid two clocks (Samsung: Good Lock › LockStar).
+- The phone's own lock-screen clock is always drawn above any wallpaper, and apps can't remove it. On Samsung you can make it invisible: touch and hold the lock screen, tap the clock, pick a single-colour style and set its colour to fully transparent (the app guides you through this).
 - The depth clock needs Google Play services, which downloads the subject-detection model the first time.
 - Very high-resolution videos (4K and above) use more battery; 1080p is plenty for a background.
 - Supported photo formats: JPEG, PNG, WebP, BMP, HEIF/HEIC and AVIF (as supported by the phone).

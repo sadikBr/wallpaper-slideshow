@@ -46,6 +46,7 @@ class SettingsRepository(context: Context) {
                 clockOffsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]),
                 photoFramings = decodeFramings(prefs[Keys.PHOTO_FRAMINGS]),
                 widgets = readWidgets(prefs),
+                lockClockGuideDone = prefs[Keys.LOCK_CLOCK_GUIDE_DONE] ?: false,
                 itemLooks = decodeLooks(prefs[Keys.ITEM_LOOKS], WallpaperLook(readClock(prefs), readWidgets(prefs))),
             )
         }
@@ -139,6 +140,8 @@ class SettingsRepository(context: Context) {
             else -> prefs[Keys.WIDGET_FAHRENHEIT] = updated.fahrenheit
         }
     }
+
+    suspend fun setLockClockGuideDone(done: Boolean) = dataStore.edit { it[Keys.LOCK_CLOCK_GUIDE_DONE] = done }
 
     /** Sets (or with null, removes) the look of the given items. */
     suspend fun setItemLooks(looks: Map<String, WallpaperLook?>) = dataStore.edit { prefs ->
@@ -247,6 +250,7 @@ class SettingsRepository(context: Context) {
         val WIDGET_POSITION = floatPreferencesKey("widget_position")
         val WIDGET_FAHRENHEIT = booleanPreferencesKey("widget_fahrenheit")
         val ITEM_LOOKS = stringPreferencesKey("item_looks")
+        val LOCK_CLOCK_GUIDE_DONE = booleanPreferencesKey("lock_clock_guide_done")
     }
 
     private companion object {

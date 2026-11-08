@@ -21,7 +21,7 @@
   - Move the clock for a single photo with **Adjust clock** in that photo's menu, with a live preview.
 - The preview at the top of the app shows the clock and depth effect.
 
-Note: the phone's own lock-screen clock is still drawn on top of any wallpaper. To avoid two clocks on the lock screen, hide or shrink it (on Samsung: Good Lock › LockStar). The home screen has no system clock, so the effect works there as is.
+Note: the phone's own lock-screen clock is still drawn on top of any wallpaper, and Android doesn't let apps remove it. On Samsung phones the app now walks you through making it invisible (lock screen editor › clock › fully transparent colour) right after you set the wallpaper, so only the depth clock shows. The home screen has no system clock, so the effect works there as is.
 
 ### Also in this release
 Everything from 1.0.1 below (fix for the wallpaper getting stuck on a plain blue background).

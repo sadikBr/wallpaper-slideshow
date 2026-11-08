@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,8 @@ import com.sadikbr.videowallpaper.ui.home.HomeActions
 import com.sadikbr.videowallpaper.ui.home.HomeScreen
 import com.sadikbr.videowallpaper.ui.home.HomeState
 import com.sadikbr.videowallpaper.ui.home.SlideshowSheet
+import com.sadikbr.videowallpaper.ui.home.LockClockGuideSheet
+import com.sadikbr.videowallpaper.ui.home.isSamsung
 import com.sadikbr.videowallpaper.ui.studio.WallpaperStudio
 import com.sadikbr.videowallpaper.wallpaper.VideoWallpaperService
 
@@ -44,8 +47,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
     // Re-check on every return to the app, e.g. after the system "Set wallpaper" screen.
     var wallpaperActive by remember { mutableStateOf(false) }
+    /** Set when the wallpaper was just applied, to offer the lock screen clock guide once. */
+    var justApplied by remember { mutableStateOf(false) }
+    var lockClockGuide by remember { mutableStateOf(false) }
     LifecycleResumeEffect(Unit) {
-        wallpaperActive = isOurWallpaperActive(context)
+        val active = isOurWallpaperActive(context)
+        if (active && !wallpaperActive) justApplied = true
+        wallpaperActive = active
         onPauseOrDispose { }
     }
 
@@ -62,6 +70,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     if (current == null) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0B0920)))
         return
+    }
+
+    // On Samsung, two clocks show on the lock screen until the phone's own is made invisible.
+    val clockShown = current.allLooks.any { it.clock.enabled }
+    val offerLockClockGuide = isSamsung && wallpaperActive && clockShown && !current.lockClockGuideDone
+    // Right after the wallpaper is set, open the guide once (if it applies).
+    LaunchedEffect(justApplied) {
+        if (justApplied) {
+            justApplied = false
+            if (offerLockClockGuide) lockClockGuide = true
+        }
     }
 
     // The editor is a full page of its own (not a pop-up), so it fits between the system bars.
@@ -90,6 +109,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             depthProgress = depthProgress,
             widgetSnapshot = widgetSnapshot,
             systemUses24Hour = viewModel.systemUses24Hour(),
+            showLockClockBanner = offerLockClockGuide,
         ),
         actions = HomeActions(
             onAdd = addMedia,
@@ -101,9 +121,23 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             onOpenSlideshowSettings = { slideshowSheet = true },
             builtInUri = viewModel::builtInUri,
             onToggleBuiltIn = viewModel::toggleBuiltIn,
+            onOpenLockClockGuide = { lockClockGuide = true },
         ),
         loader = viewModel.mediaInfoLoader,
     )
+
+    if (lockClockGuide) {
+        LockClockGuideSheet(
+            onOpenSettings = {
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
+            },
+            onDone = {
+                viewModel.setLockClockGuideDone()
+                lockClockGuide = false
+            },
+            onLater = { lockClockGuide = false },
+        )
+    }
 
     if (slideshowSheet) {
         SlideshowSheet(

@@ -151,6 +151,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         result.framings.forEach { (uri, framing) -> repository.setPhotoFraming(uri, framing) }
     }
 
+    fun setLockClockGuideDone() = launch { repository.setLockClockGuideDone(true) }
+
     /** The main "Depth clock" switch: turns the clock on or off for every wallpaper. */
     fun setClockEverywhere(enabled: Boolean) = launch {
         repository.updateAllLooks { it.copy(clock = it.clock.copy(enabled = enabled)) }

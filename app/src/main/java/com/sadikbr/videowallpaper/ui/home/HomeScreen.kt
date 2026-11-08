@@ -104,6 +104,8 @@ data class HomeState(
     val depthProgress: Map<String, Float>,
     val widgetSnapshot: WidgetSnapshot,
     val systemUses24Hour: Boolean,
+    /** Offer the guide to hide the phone's own lock screen clock. */
+    val showLockClockBanner: Boolean = false,
 )
 
 /** What the home screen can do. */
@@ -117,6 +119,7 @@ data class HomeActions(
     val onOpenSlideshowSettings: () -> Unit,
     val builtInUri: (BuiltInWallpapers.Wallpaper) -> String,
     val onToggleBuiltIn: (BuiltInWallpapers.Wallpaper) -> Unit,
+    val onOpenLockClockGuide: () -> Unit = {},
 )
 
 private val HomeBackground = Color(0xFF0B0920)
@@ -175,6 +178,7 @@ fun HomeScreen(state: HomeState, actions: HomeActions, loader: MediaInfoLoader) 
                     onRemove = { current?.let(actions.onRemove) },
                 )
                 ApplyButton(active = state.wallpaperActive, onClick = actions.onApply)
+                if (state.showLockClockBanner) LockClockBanner(onClick = actions.onOpenLockClockGuide)
             }
 
             SectionTitle("Slideshow", "Tap a tile to change it")
@@ -190,8 +194,13 @@ fun HomeScreen(state: HomeState, actions: HomeActions, loader: MediaInfoLoader) 
             }
 
             Text(
-                "Tip: on the lock screen, your phone's own clock is drawn on top. Hide or shrink it " +
-                    "(Samsung: Good Lock › LockStar) for the cleanest look.",
+                if (isSamsung) {
+                    "Tip: your phone's own lock screen clock can be made invisible: touch and hold the lock " +
+                        "screen, tap the clock, and set its colour to fully transparent."
+                } else {
+                    "Tip: on the lock screen, your phone's own clock is drawn on top. If your phone lets you, " +
+                        "make it small or hide it for the cleanest look."
+                },
                 color = Color.White.copy(alpha = 0.45f),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),

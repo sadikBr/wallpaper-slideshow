@@ -25,6 +25,7 @@ import com.sadikbr.videowallpaper.data.WidgetSnapshot
 import com.sadikbr.videowallpaper.ui.home.HomeActions
 import com.sadikbr.videowallpaper.ui.home.HomeScreen
 import com.sadikbr.videowallpaper.ui.home.HomeState
+import com.sadikbr.videowallpaper.ui.home.LockClockGuideContent
 import com.sadikbr.videowallpaper.ui.studio.WallpaperStudio
 import com.sadikbr.videowallpaper.ui.theme.WallpaperSlideshowTheme
 import org.junit.Rule
@@ -142,6 +143,39 @@ class UiScreenshotTest {
     fun homeFullPage() {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 5200))
         home(settings.copy(media = listOf(photoUri, secondUri)), loaderWithSamplePhoto())
+    }
+
+    @Test
+    fun lockClockGuide() {
+        paparazzi.snapshot {
+            WallpaperSlideshowTheme {
+                androidx.compose.foundation.layout.Box(Modifier.background(androidx.compose.ui.graphics.Color(0xFF15122C))) {
+                    LockClockGuideContent(onOpenSettings = {}, onDone = {}, onLater = {})
+                }
+            }
+        }
+    }
+
+    @Test
+    fun homeWithLockClockBanner() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3000))
+        paparazzi.snapshot {
+            WallpaperSlideshowTheme {
+                HomeScreen(
+                    state = HomeState(
+                        settings = settings,
+                        wallpaperActive = true,
+                        depthStates = emptyMap(),
+                        depthProgress = emptyMap(),
+                        widgetSnapshot = WidgetSnapshot(batteryPercent = 76),
+                        systemUses24Hour = true,
+                        showLockClockBanner = true,
+                    ),
+                    actions = noActions,
+                    loader = loaderWithSamplePhoto(),
+                )
+            }
+        }
     }
 
     @Test
