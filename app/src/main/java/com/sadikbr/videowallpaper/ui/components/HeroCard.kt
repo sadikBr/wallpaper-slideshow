@@ -64,8 +64,10 @@ fun HeroCard(
             contentColor = Color.White,
         ),
     ) {
+        // The gradient must cover the whole card, not just the width of its contents.
         Row(
             Modifier
+                .fillMaxWidth()
                 .background(Brand.gradient)
                 .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -80,7 +82,7 @@ fun HeroCard(
                 modifier = Modifier.width(96.dp),
             )
             Spacer(Modifier.width(20.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 StatusPill(active = wallpaperActive)
                 Text(
                     if (hasMedia) "Your slideshow" else "Get started",
