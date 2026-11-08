@@ -8,7 +8,6 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import kotlin.math.ceil
 import android.graphics.LinearGradient
-import android.graphics.LightingColorFilter
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.math.floor
@@ -20,6 +19,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.format.DateFormat
+import androidx.core.graphics.ColorUtils
 import com.sadikbr.videowallpaper.data.ClockFont
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.SignatureFont
@@ -147,6 +147,13 @@ object ClockPainter {
         // Room for the shadow and anti-aliasing around each part.
         val pad = width * 0.03f
         val timeBounds = RectF(timeRect).apply { inset(-pad, -pad) }
+        if (clock.waterline != null) {
+            // Room for the underwater digits' shadow, sink and ripple (see renderUnderwater).
+            val extra = stretchedHeight * 0.13f + timeRect.width() * 0.006f
+            timeBounds.left -= extra
+            timeBounds.right += extra
+            timeBounds.bottom += extra
+        }
         var dateBaseline = 0f
         var dateBounds: RectF? = null
         if (dateText != null) {
@@ -165,6 +172,8 @@ object ClockPainter {
             timeRect, timeBounds, dateBounds,
             waterline = clock.waterline?.coerceIn(ClockSettings.MIN_WATERLINE, ClockSettings.MAX_WATERLINE),
             waterGap = clock.waterGap.coerceIn(0f, ClockSettings.MAX_WATER_GAP),
+            color = clock.color,
+            opacity = clock.opacity.coerceIn(0f, 1f),
             // Everything the underwater picture depends on (the time, the look and the geometry).
             // (Not the position: the picture is placed relative to the time, so moving it is free.)
             waterKey = listOf(timeText, clock.copy(position = 0f), width, height),
@@ -190,6 +199,8 @@ class ClockLayout internal constructor(
     private val waterline: Float? = null,
     private val waterGap: Float = 0f,
     private val waterKey: Any? = null,
+    private val color: Int = Color.WHITE,
+    private val opacity: Float = 1f,
 ) {
     /**
      * The big time, stretched upwards from its baseline. With depth it goes behind the subject.
@@ -215,32 +226,66 @@ class ClockLayout internal constructor(
     }
 
     /**
-     * The digits as seen under water: tinted towards blue, softly blurred, sunk a little (so they
-     * don't line up with the part above the surface, like refraction), rippling sideways, and
-     * fading away with depth.
+     * The digits as seen under water, made to stay readable over any water, bright or dark.
+     * Glass under water is seen by its edges more than its fill, so they are drawn in three
+     * layers: a soft dark shadow (stands out on bright water), a see-through fill in the clock's
+     * colour tinted by the water, and a thin bright outline (stands out on dark water). They are
+     * softly blurred, sunk a little (so they don't line up with the part above the surface, like
+     * refraction), ripple sideways, and fade a little with depth.
      */
     private fun renderUnderwater(waterY: Float): UnderwaterDigits.Picture? {
         val height = timeRect.height()
         val amplitude = timeRect.width() * 0.0045f
         val sink = height * 0.025f
-        val pad = ceil(amplitude).toInt() + 2
+        val shadowBlur = height * 0.035f
+        val pad = ceil(amplitude + shadowBlur * 2f).toInt() + 2
         val left = floor(timeBounds.left) - pad
         val width = ceil(timeBounds.right - timeBounds.left).toInt() + 2 * pad
-        val rows = ceil(timeBounds.bottom + sink - waterY).toInt()
+        val rows = ceil(timeBounds.bottom + sink + shadowBlur * 2f - waterY).toInt()
         if (width <= 0 || rows <= 0) return null
 
-        val paint = Paint(timePaint).apply {
-            alpha = (alpha * 0.8f).toInt()
-            colorFilter = LightingColorFilter(0xFFA6D8FF.toInt(), 0x00061220)
-            maskFilter = BlurMaskFilter((height * 0.008f).coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
+        // Readable even for the faintest glass looks.
+        val strength = 0.75f + 0.25f * opacity
+        val shadow = Paint(timePaint).apply {
+            shader = null
+            clearShadowLayer()
+            colorFilter = null
+            color = 0xFF04182C.toInt()
+            alpha = (0.5f * strength * 255).toInt()
+            maskFilter = BlurMaskFilter(shadowBlur, BlurMaskFilter.Blur.NORMAL)
         }
+        val fill = Paint(timePaint).apply {
+            shader = null
+            clearShadowLayer()
+            colorFilter = null
+            color = ColorUtils.blendARGB(this@ClockLayout.color, 0xFF8FD3FF.toInt(), 0.35f)
+            alpha = (0.55f * strength * 255).toInt()
+            maskFilter = BlurMaskFilter((height * 0.004f).coerceAtLeast(0.75f), BlurMaskFilter.Blur.NORMAL)
+        }
+        val outline = Paint(timePaint).apply {
+            shader = null
+            clearShadowLayer()
+            colorFilter = null
+            style = Paint.Style.STROKE
+            // The digits are stretched vertically, which thickens the outline's horizontal parts.
+            strokeWidth = (height * 0.012f / stretch).coerceAtLeast(1.2f)
+            color = ColorUtils.blendARGB(this@ClockLayout.color, Color.WHITE, 0.6f)
+            alpha = (0.85f * strength * 255).toInt()
+        }
+
         val flat = Bitmap.createBitmap(width, rows, Bitmap.Config.ARGB_8888)
         Canvas(flat).apply {
+            save()
             translate(-left, -waterY + sink)
-            drawDigits(this, paint)
+            save()
+            translate(0f, height * 0.015f)
+            drawDigits(this, shadow)
+            restore()
+            drawDigits(this, fill)
+            drawDigits(this, outline)
+            restore()
             // Hidden between the waterline and where the underwater view begins (the gap), then
-            // fading with depth: clear at first, nearly gone at the bottom of the digits.
-            translate(left, waterY - sink)
+            // fading a little with depth.
             val gap = height * waterGap
             if (gap > 0f) drawRect(0f, 0f, width.toFloat(), gap, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) })
             drawRect(
@@ -248,8 +293,8 @@ class ClockLayout internal constructor(
                 Paint().apply {
                     shader = LinearGradient(
                         0f, gap, 0f, rows.toFloat(),
-                        intArrayOf(0xD0000000.toInt(), 0x70000000, 0x18000000),
-                        floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+                        intArrayOf(0xFF000000.toInt(), 0xE0000000.toInt(), 0x80000000.toInt()),
+                        floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP,
                     )
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
                 },
