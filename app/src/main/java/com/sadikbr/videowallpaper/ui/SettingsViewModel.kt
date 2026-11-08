@@ -7,7 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.SettingsRepository
-import com.sadikbr.videowallpaper.data.VideoInfoLoader
+import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,13 +17,13 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SettingsRepository(application)
-    val videoInfoLoader = VideoInfoLoader(application)
+    val mediaInfoLoader = MediaInfoLoader(application)
 
     /** Null until the saved settings have been read for the first time. */
     val settings: StateFlow<WallpaperSettings?> = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun addVideos(uris: List<Uri>) {
+    fun addMedia(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val resolver = getApplication<Application>().contentResolver
         val added = uris.mapNotNull { uri ->
@@ -33,11 +33,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
             uri.toString()
         }
-        editVideos { current -> current + added.filterNot { it in current }.distinct() }
+        editMedia { current -> current + added.filterNot { it in current }.distinct() }
     }
 
-    fun removeVideo(uri: String) {
-        editVideos { current -> current - uri }
+    fun removeItem(uri: String) {
+        editMedia { current -> current - uri }
         runCatching {
             getApplication<Application>().contentResolver.releasePersistableUriPermission(
                 Uri.parse(uri),
@@ -46,7 +46,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun moveVideo(from: Int, to: Int) = editVideos { current ->
+    fun moveItem(from: Int, to: Int) = editMedia { current ->
         if (from !in current.indices || to !in current.indices) {
             current
         } else {
@@ -56,12 +56,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setShuffle(value: Boolean) = launch { repository.setShuffle(value) }
     fun setClipSeconds(value: Int) = launch { repository.setClipSeconds(value) }
+    fun setImageSeconds(value: Int) = launch { repository.setImageSeconds(value) }
     fun setScaleMode(value: ScaleMode) = launch { repository.setScaleMode(value) }
     fun setMuted(value: Boolean) = launch { repository.setMuted(value) }
     fun setSpeed(value: Float) = launch { repository.setSpeed(value) }
 
-    private fun editVideos(transform: (List<String>) -> List<String>) = launch {
-        repository.updateVideos(transform)
+    private fun editMedia(transform: (List<String>) -> List<String>) = launch {
+        repository.updateMedia(transform)
     }
 
     private fun launch(block: suspend () -> Unit) {

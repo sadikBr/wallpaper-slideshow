@@ -43,11 +43,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.sadikbr.videowallpaper.ui.components.EmptyVideosCard
+import com.sadikbr.videowallpaper.ui.components.EmptyMediaCard
 import com.sadikbr.videowallpaper.ui.components.HeroCard
 import com.sadikbr.videowallpaper.ui.components.PlaybackCard
 import com.sadikbr.videowallpaper.ui.components.SectionHeader
-import com.sadikbr.videowallpaper.ui.components.VideoTile
+import com.sadikbr.videowallpaper.ui.components.MediaTile
 import com.sadikbr.videowallpaper.wallpaper.VideoWallpaperService
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,10 +64,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         onPauseOrDispose { }
     }
 
-    val pickVideos = rememberLauncherForActivityResult(
+    val pickMedia = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris -> viewModel.addVideos(uris) }
-    val addVideos = { pickVideos.launch(arrayOf("video/*")) }
+    ) { uris -> viewModel.addMedia(uris) }
+    val addMedia = { pickMedia.launch(arrayOf("image/*", "video/*")) }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -79,9 +79,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = addVideos,
+                onClick = addMedia,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Add videos") },
+                text = { Text("Add photos & videos") },
             )
         },
     ) { padding ->
@@ -108,34 +108,34 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             fullWidth("hero") {
                 HeroCard(
                     settings = current,
-                    loader = viewModel.videoInfoLoader,
+                    loader = viewModel.mediaInfoLoader,
                     wallpaperActive = wallpaperActive,
                     onApply = { openWallpaperPicker(context) },
                 )
             }
 
-            fullWidth("videos-header") {
+            fullWidth("media-header") {
                 SectionHeader(
-                    title = "Your videos",
-                    trailing = if (current.videos.isEmpty()) null else "${current.videos.size}",
-                    hint = if (current.videos.size > 1) "Tap a video to reorder or remove it" else null,
+                    title = "Your slideshow",
+                    trailing = if (current.media.isEmpty()) null else "${current.media.size}",
+                    hint = if (current.media.size > 1) "Tap an item to reorder or remove it" else null,
                 )
             }
 
-            if (current.videos.isEmpty()) {
-                fullWidth("empty") { EmptyVideosCard(onAdd = addVideos) }
+            if (current.media.isEmpty()) {
+                fullWidth("empty") { EmptyMediaCard(onAdd = addMedia) }
             }
 
-            itemsIndexed(current.videos, key = { _, uri -> uri }) { index, uri ->
-                VideoTile(
+            itemsIndexed(current.media, key = { _, uri -> uri }) { index, uri ->
+                MediaTile(
                     position = index + 1,
                     uri = uri,
-                    loader = viewModel.videoInfoLoader,
+                    loader = viewModel.mediaInfoLoader,
                     canMoveEarlier = index > 0,
-                    canMoveLater = index < current.videos.lastIndex,
-                    onMoveEarlier = { viewModel.moveVideo(index, index - 1) },
-                    onMoveLater = { viewModel.moveVideo(index, index + 1) },
-                    onRemove = { viewModel.removeVideo(uri) },
+                    canMoveLater = index < current.media.lastIndex,
+                    onMoveEarlier = { viewModel.moveItem(index, index - 1) },
+                    onMoveLater = { viewModel.moveItem(index, index + 1) },
+                    onRemove = { viewModel.removeItem(uri) },
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -150,6 +150,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     onShuffleChange = viewModel::setShuffle,
                     onMutedChange = viewModel::setMuted,
                     onClipSecondsChange = viewModel::setClipSeconds,
+                    onImageSecondsChange = viewModel::setImageSeconds,
                     onSpeedChange = viewModel::setSpeed,
                     onScaleModeChange = viewModel::setScaleMode,
                 )

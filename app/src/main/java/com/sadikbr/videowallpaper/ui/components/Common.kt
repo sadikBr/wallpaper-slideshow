@@ -28,13 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.sadikbr.videowallpaper.data.VideoInfo
-import com.sadikbr.videowallpaper.data.VideoInfoLoader
+import com.sadikbr.videowallpaper.data.MediaInfo
+import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.ui.theme.AppIcons
 
 /** The name, length and preview frame of [uri], loaded in the background (null while loading). */
 @Composable
-fun rememberVideoInfo(uri: String?, loader: VideoInfoLoader): State<VideoInfo?> {
+fun rememberMediaInfo(uri: String?, loader: MediaInfoLoader): State<MediaInfo?> {
     val state = remember(uri) { mutableStateOf(uri?.let(loader::cached)) }
     LaunchedEffect(uri) {
         if (uri != null) state.value = loader.load(uri)
@@ -73,7 +73,7 @@ fun SectionHeader(title: String, trailing: String? = null, hint: String? = null)
 }
 
 @Composable
-fun EmptyVideosCard(onAdd: () -> Unit) {
+fun EmptyMediaCard(onAdd: () -> Unit) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(
             Modifier
@@ -89,15 +89,15 @@ fun EmptyVideosCard(onAdd: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    AppIcons.VideoLibrary,
+                    AppIcons.Collections,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(32.dp),
                 )
             }
-            Text("No videos yet", style = MaterialTheme.typography.titleMedium)
+            Text("Nothing here yet", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Choose a few videos from your phone. They'll play one after another behind your apps.",
+                "Choose photos, videos, or a mix of both. They'll play one after another behind your apps.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -106,7 +106,7 @@ fun EmptyVideosCard(onAdd: () -> Unit) {
             FilledTonalButton(onClick = onAdd) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Choose videos")
+                Text("Choose photos & videos")
             }
         }
     }

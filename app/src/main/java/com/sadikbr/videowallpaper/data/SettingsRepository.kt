@@ -24,12 +24,13 @@ class SettingsRepository(context: Context) {
     val settings: Flow<WallpaperSettings> = dataStore.data
         .map { prefs ->
             WallpaperSettings(
-                videos = prefs[Keys.VIDEOS]
+                media = prefs[Keys.MEDIA]
                     ?.split(SEPARATOR)
                     ?.filter { it.isNotBlank() }
                     .orEmpty(),
                 shuffle = prefs[Keys.SHUFFLE] ?: false,
                 clipSeconds = prefs[Keys.CLIP_SECONDS] ?: 0,
+                imageSeconds = prefs[Keys.IMAGE_SECONDS] ?: WallpaperSettings.DEFAULT_IMAGE_SECONDS,
                 scaleMode = prefs[Keys.SCALE_MODE]
                     ?.let { name -> ScaleMode.entries.firstOrNull { it.name == name } }
                     ?: ScaleMode.CROP,
@@ -39,15 +40,17 @@ class SettingsRepository(context: Context) {
         }
         .distinctUntilChanged()
 
-    /** Atomically replaces the video list with [transform] applied to the saved one. */
-    suspend fun updateVideos(transform: (List<String>) -> List<String>) = dataStore.edit { prefs ->
-        val current = prefs[Keys.VIDEOS]?.split(SEPARATOR)?.filter { it.isNotBlank() }.orEmpty()
-        prefs[Keys.VIDEOS] = transform(current).joinToString(SEPARATOR)
+    /** Atomically replaces the media list with [transform] applied to the saved one. */
+    suspend fun updateMedia(transform: (List<String>) -> List<String>) = dataStore.edit { prefs ->
+        val current = prefs[Keys.MEDIA]?.split(SEPARATOR)?.filter { it.isNotBlank() }.orEmpty()
+        prefs[Keys.MEDIA] = transform(current).joinToString(SEPARATOR)
     }
 
     suspend fun setShuffle(value: Boolean) = dataStore.edit { it[Keys.SHUFFLE] = value }
 
     suspend fun setClipSeconds(value: Int) = dataStore.edit { it[Keys.CLIP_SECONDS] = value }
+
+    suspend fun setImageSeconds(value: Int) = dataStore.edit { it[Keys.IMAGE_SECONDS] = value }
 
     suspend fun setScaleMode(value: ScaleMode) = dataStore.edit { it[Keys.SCALE_MODE] = value.name }
 
@@ -56,9 +59,11 @@ class SettingsRepository(context: Context) {
     suspend fun setSpeed(value: Float) = dataStore.edit { it[Keys.SPEED] = value }
 
     private object Keys {
-        val VIDEOS = stringPreferencesKey("videos")
+        // Holds photos too; the key name is kept so existing lists survive the update.
+        val MEDIA = stringPreferencesKey("videos")
         val SHUFFLE = booleanPreferencesKey("shuffle")
         val CLIP_SECONDS = intPreferencesKey("clip_seconds")
+        val IMAGE_SECONDS = intPreferencesKey("image_seconds")
         val SCALE_MODE = stringPreferencesKey("scale_mode")
         val MUTED = booleanPreferencesKey("muted")
         val SPEED = floatPreferencesKey("speed")

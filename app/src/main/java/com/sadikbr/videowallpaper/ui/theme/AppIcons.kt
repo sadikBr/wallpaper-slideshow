@@ -370,4 +370,72 @@ object AppIcons {
         }
     }
 
+    val Image: ImageVector by lazy {
+        materialIcon(name = "Rounded.Image") {
+            materialPath {
+                moveTo(21.0f, 19.0f)
+                verticalLineTo(5.0f)
+                curveToRelative(0.0f, -1.1f, -0.9f, -2.0f, -2.0f, -2.0f)
+                horizontalLineTo(5.0f)
+                curveToRelative(-1.1f, 0.0f, -2.0f, 0.9f, -2.0f, 2.0f)
+                verticalLineToRelative(14.0f)
+                curveToRelative(0.0f, 1.1f, 0.9f, 2.0f, 2.0f, 2.0f)
+                horizontalLineToRelative(14.0f)
+                curveToRelative(1.1f, 0.0f, 2.0f, -0.9f, 2.0f, -2.0f)
+                close()
+                moveTo(8.9f, 13.98f)
+                lineToRelative(2.1f, 2.53f)
+                lineToRelative(3.1f, -3.99f)
+                curveToRelative(0.2f, -0.26f, 0.6f, -0.26f, 0.8f, 0.01f)
+                lineToRelative(3.51f, 4.68f)
+                curveToRelative(0.25f, 0.33f, 0.01f, 0.8f, -0.4f, 0.8f)
+                horizontalLineTo(6.02f)
+                curveToRelative(-0.42f, 0.0f, -0.65f, -0.48f, -0.39f, -0.81f)
+                lineTo(8.12f, 14.0f)
+                curveToRelative(0.19f, -0.26f, 0.57f, -0.27f, 0.78f, -0.02f)
+                close()
+            }
+        }
+    }
+
+    val Collections: ImageVector by lazy {
+        materialIcon(name = "Rounded.Collections") {
+            materialPath {
+                moveTo(22.0f, 16.0f)
+                lineTo(22.0f, 4.0f)
+                curveToRelative(0.0f, -1.1f, -0.9f, -2.0f, -2.0f, -2.0f)
+                lineTo(8.0f, 2.0f)
+                curveToRelative(-1.1f, 0.0f, -2.0f, 0.9f, -2.0f, 2.0f)
+                verticalLineToRelative(12.0f)
+                curveToRelative(0.0f, 1.1f, 0.9f, 2.0f, 2.0f, 2.0f)
+                horizontalLineToRelative(12.0f)
+                curveToRelative(1.1f, 0.0f, 2.0f, -0.9f, 2.0f, -2.0f)
+                close()
+                moveTo(11.4f, 12.53f)
+                lineToRelative(1.63f, 2.18f)
+                lineToRelative(2.58f, -3.22f)
+                curveToRelative(0.2f, -0.25f, 0.58f, -0.25f, 0.78f, 0.0f)
+                lineToRelative(2.96f, 3.7f)
+                curveToRelative(0.26f, 0.33f, 0.03f, 0.81f, -0.39f, 0.81f)
+                lineTo(9.0f, 16.0f)
+                curveToRelative(-0.41f, 0.0f, -0.65f, -0.47f, -0.4f, -0.8f)
+                lineToRelative(2.0f, -2.67f)
+                curveToRelative(0.2f, -0.26f, 0.6f, -0.26f, 0.8f, 0.0f)
+                close()
+                moveTo(2.0f, 7.0f)
+                verticalLineToRelative(13.0f)
+                curveToRelative(0.0f, 1.1f, 0.9f, 2.0f, 2.0f, 2.0f)
+                horizontalLineToRelative(13.0f)
+                curveToRelative(0.55f, 0.0f, 1.0f, -0.45f, 1.0f, -1.0f)
+                reflectiveCurveToRelative(-0.45f, -1.0f, -1.0f, -1.0f)
+                lineTo(5.0f, 20.0f)
+                curveToRelative(-0.55f, 0.0f, -1.0f, -0.45f, -1.0f, -1.0f)
+                lineTo(4.0f, 7.0f)
+                curveToRelative(0.0f, -0.55f, -0.45f, -1.0f, -1.0f, -1.0f)
+                reflectiveCurveToRelative(-1.0f, 0.45f, -1.0f, 1.0f)
+                close()
+            }
+        }
+    }
+
 }

@@ -34,8 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.ScaleMode
-import com.sadikbr.videowallpaper.data.VideoInfoLoader
+import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import com.sadikbr.videowallpaper.ui.theme.AppIcons
 
@@ -43,11 +44,11 @@ import com.sadikbr.videowallpaper.ui.theme.AppIcons
 @Composable
 fun HeroCard(
     settings: WallpaperSettings,
-    loader: VideoInfoLoader,
+    loader: MediaInfoLoader,
     wallpaperActive: Boolean,
     onApply: () -> Unit,
 ) {
-    val hasVideos = settings.videos.isNotEmpty()
+    val hasMedia = settings.media.isNotEmpty()
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -61,7 +62,7 @@ fun HeroCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PhonePreview(
-                uri = settings.videos.firstOrNull(),
+                uri = settings.media.firstOrNull(),
                 loader = loader,
                 scaleMode = settings.scaleMode,
                 modifier = Modifier.width(96.dp),
@@ -70,16 +71,16 @@ fun HeroCard(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 StatusPill(active = wallpaperActive)
                 Text(
-                    if (hasVideos) "Your slideshow" else "Get started",
+                    if (hasMedia) "Your slideshow" else "Get started",
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Text(
-                    if (hasVideos) summary(settings) else "Add videos below, then set the slideshow as your wallpaper.",
+                    if (hasMedia) summary(settings, loader) else "Add photos or videos below, then set the slideshow as your wallpaper.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                 )
                 Spacer(Modifier.height(4.dp))
-                Button(onClick = onApply, enabled = hasVideos) {
+                Button(onClick = onApply, enabled = hasMedia) {
                     Icon(AppIcons.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(if (wallpaperActive) "Preview" else "Set as wallpaper")
@@ -92,11 +93,11 @@ fun HeroCard(
 @Composable
 private fun PhonePreview(
     uri: String?,
-    loader: VideoInfoLoader,
+    loader: MediaInfoLoader,
     scaleMode: ScaleMode,
     modifier: Modifier = Modifier,
 ) {
-    val info by rememberVideoInfo(uri, loader)
+    val info by rememberMediaInfo(uri, loader)
     val thumbnail = info?.thumbnail
     Box(
         modifier
@@ -109,7 +110,7 @@ private fun PhonePreview(
         if (thumbnail != null) {
             Image(
                 bitmap = thumbnail.asImageBitmap(),
-                contentDescription = "Preview of the first video",
+                contentDescription = "Preview of the first item",
                 // Mirror the chosen "fit to screen" setting so its effect is visible here.
                 contentScale = if (scaleMode == ScaleMode.CROP) ContentScale.Crop else ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().padding(4.dp).clip(RoundedCornerShape(14.dp)),
@@ -155,10 +156,14 @@ private fun StatusPill(active: Boolean) {
     }
 }
 
-private fun summary(settings: WallpaperSettings): String = buildList {
-    val count = settings.videos.size
-    add(if (count == 1) "1 video" else "$count videos")
-    if (settings.shuffle) add("shuffled")
-    add(if (settings.clipSeconds > 0) "${settings.clipSeconds}s each" else "full length")
-    if (!settings.muted) add("with sound")
-}.joinToString(" · ")
+private fun summary(settings: WallpaperSettings, loader: MediaInfoLoader): String {
+    // Kinds come from the info already loaded for the grid; unknown items count as videos.
+    val photos = settings.media.count { loader.cached(it)?.kind == MediaKind.IMAGE }
+    val videos = settings.media.size - photos
+    return buildList {
+        if (videos > 0) add(if (videos == 1) "1 video" else "$videos videos")
+        if (photos > 0) add(if (photos == 1) "1 photo" else "$photos photos")
+        if (settings.shuffle) add("shuffled")
+        if (!settings.muted && videos > 0) add("with sound")
+    }.joinToString(" · ")
+}

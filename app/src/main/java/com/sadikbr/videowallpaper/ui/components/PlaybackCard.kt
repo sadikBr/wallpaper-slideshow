@@ -44,6 +44,7 @@ fun PlaybackCard(
     onShuffleChange: (Boolean) -> Unit,
     onMutedChange: (Boolean) -> Unit,
     onClipSecondsChange: (Int) -> Unit,
+    onImageSecondsChange: (Int) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onScaleModeChange: (ScaleMode) -> Unit,
 ) {
@@ -95,8 +96,21 @@ fun PlaybackCard(
             ItemDivider()
 
             SettingRow(
+                icon = AppIcons.Image,
+                title = "Photo duration",
+                subtitle = "Each photo stays on screen for ${settings.imageSeconds}s",
+            )
+            StepSlider(
+                options = WallpaperSettings.IMAGE_SECONDS_OPTIONS,
+                selected = settings.imageSeconds,
+                label = { "${it}s" },
+                onSelected = onImageSecondsChange,
+            )
+            ItemDivider()
+
+            SettingRow(
                 icon = AppIcons.Speed,
-                title = "Speed",
+                title = "Video speed",
                 subtitle = "${formatSpeed(settings.speed)}×",
             )
             StepSlider(
@@ -112,7 +126,7 @@ fun PlaybackCard(
                 title = "Fit to screen",
                 subtitle = when (settings.scaleMode) {
                     ScaleMode.CROP -> "Fills the screen; edges may be cut off"
-                    ScaleMode.FIT -> "Shows the whole video with black bars"
+                    ScaleMode.FIT -> "Shows the whole photo or video, with black bars"
                 },
             )
             SingleChoiceSegmentedButtonRow(
@@ -120,7 +134,7 @@ fun PlaybackCard(
                     .fillMaxWidth()
                     .padding(start = 72.dp, end = 16.dp, bottom = 12.dp)
             ) {
-                val options = listOf(ScaleMode.CROP to "Fill screen", ScaleMode.FIT to "Whole video")
+                val options = listOf(ScaleMode.CROP to "Fill screen", ScaleMode.FIT to "Show all")
                 options.forEachIndexed { index, (mode, label) ->
                     SegmentedButton(
                         selected = settings.scaleMode == mode,

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -40,14 +41,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.sadikbr.videowallpaper.data.VideoInfoLoader
+import com.sadikbr.videowallpaper.data.MediaInfoLoader
+import com.sadikbr.videowallpaper.data.MediaKind
+import com.sadikbr.videowallpaper.ui.theme.AppIcons
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 
-/** One video in the grid: its preview frame, position and length. Tap for actions. */
+/** One photo or video in the grid: its preview, position and length. Tap for actions. */
 @Composable
-fun VideoTile(
+fun MediaTile(
     position: Int,
     uri: String,
-    loader: VideoInfoLoader,
+    loader: MediaInfoLoader,
     canMoveEarlier: Boolean,
     canMoveLater: Boolean,
     onMoveEarlier: () -> Unit,
@@ -55,7 +61,7 @@ fun VideoTile(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val info by rememberVideoInfo(uri, loader)
+    val info by rememberMediaInfo(uri, loader)
     var menuOpen by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(18.dp)
 
@@ -112,13 +118,26 @@ fun VideoTile(
                     )
                     .padding(start = 8.dp, end = 8.dp, top = 20.dp, bottom = 6.dp),
             ) {
-                Text(
-                    info?.durationMs?.let(::formatDuration) ?: info?.name.orEmpty(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val isPhoto = info?.kind == MediaKind.IMAGE
+                    Icon(
+                        if (isPhoto) AppIcons.Image else Icons.Default.PlayArrow,
+                        contentDescription = if (isPhoto) "Photo" else "Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        when {
+                            isPhoto -> "Photo"
+                            else -> info?.durationMs?.let(::formatDuration).orEmpty()
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             Box(
@@ -134,7 +153,7 @@ fun VideoTile(
 
             Icon(
                 Icons.Default.MoreVert,
-                contentDescription = "Video options",
+                contentDescription = "Options",
                 tint = Color.White,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
