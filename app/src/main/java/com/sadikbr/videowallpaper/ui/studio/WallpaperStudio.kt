@@ -2,6 +2,13 @@ package com.sadikbr.videowallpaper.ui.studio
 
 import android.graphics.Bitmap
 import android.graphics.RectF
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -24,15 +31,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -42,25 +45,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,26 +62,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.ColorUtils
 import com.sadikbr.videowallpaper.clock.ClockFonts
 import com.sadikbr.videowallpaper.data.ClockFont
 import com.sadikbr.videowallpaper.data.ClockSettings
@@ -104,7 +101,9 @@ import com.sadikbr.videowallpaper.ui.components.PreviewGeometry
 import com.sadikbr.videowallpaper.ui.components.fitRect
 import com.sadikbr.videowallpaper.ui.components.rememberAlphaMask
 import com.sadikbr.videowallpaper.ui.components.rememberMediaInfo
+import com.sadikbr.videowallpaper.ui.theme.AppIcons
 import com.sadikbr.videowallpaper.ui.theme.Brand
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.Typeface as ComposeTypeface
@@ -120,13 +119,21 @@ data class StudioResult(
 
 private enum class DragTarget { NONE, CLOCK, STRETCH, PHOTO }
 
+private enum class Tool(val label: String) { FONT("Font"), COLOR("Color"), GLASS("Glass"), OPTIONS("Options") }
+
+private val StudioBackground = Color(0xFF0B0920)
+private val PanelColor = Color(0xFF17132F)
+private val TileColor = Color.White.copy(alpha = 0.07f)
+private val PANEL_HEIGHT = 128.dp
+
 /**
- * Full-screen wallpaper editor: the live wallpaper preview, edited directly with gestures.
+ * Full-screen wallpaper editor (a page of the app, not a pop-up, so it fits between the
+ * status and navigation bars): the live wallpaper preview, edited directly with gestures.
  *
- * - Clock: drag to move, pinch to resize, pull the handle under it to stretch the digits,
- *   double-tap to put it back.
- * - Photo: pinch and drag to frame it, double-tap to go back to automatic framing.
- * - Bottom tray: fonts, colours, glass effects and clock options.
+ * - Clock: tap to select; drag to move, pinch to resize, pull the handle under it to stretch
+ *   the digits; double-tap to put it back.
+ * - Photo: pinch and drag to frame it; double-tap to go back to automatic framing.
+ * - Toolbar: fonts, colours, glass effects and clock options.
  */
 @Composable
 fun WallpaperStudio(
@@ -137,91 +144,141 @@ fun WallpaperStudio(
     systemUses24Hour: Boolean,
     onDone: (StudioResult) -> Unit,
     onDismiss: () -> Unit,
+    /** Which tool panel is open at first (0 = Font); for screenshot tests. */
+    initialTool: Int = 0,
 ) {
+    BackHandler(onBack = onDismiss)
+
     var clock by remember { mutableStateOf(settings.clock.copy(enabled = true)) }
     val offsetEdits = remember { mutableStateMapOf<String, Float?>() }
     val framingEdits = remember { mutableStateMapOf<String, PhotoFraming?>() }
     var selectedUri by remember { mutableStateOf(startUri ?: settings.media.firstOrNull()) }
+    var tool by remember { mutableStateOf(Tool.entries[initialTool.coerceIn(0, Tool.entries.lastIndex)]) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    val uri = selectedUri
+    val info by rememberMediaInfo(uri, loader)
+    val isPhoto = info?.kind == MediaKind.IMAGE
+    var large by remember(uri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(uri) { large = uri?.let { loader.loadLarge(it) } }
+    val photo = large ?: info?.thumbnail
+    val mask by rememberAlphaMask(uri, uri != null && depthStates[uri] == DepthMasks.State.READY && isPhoto)
+    val savedOffset = uri?.let { if (it in offsetEdits) offsetEdits[it] else settings.clockOffsets[it] }
+    val savedFraming = uri?.let { if (it in framingEdits) framingEdits[it] else settings.photoFramings[it] }
+    val use24Hour = when (clock.timeFormat) {
+        TimeFormat.SYSTEM -> systemUses24Hour
+        TimeFormat.H12 -> false
+        TimeFormat.H24 -> true
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(StudioBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
+        TopBar(
+            subtitle = info?.name,
+            onClose = onDismiss,
+            onDone = { onDone(StudioResult(clock, offsetEdits.toMap(), framingEdits.toMap())) },
+        )
+
+        if (settings.media.size > 1) {
+            ItemStrip(media = settings.media, selected = uri, loader = loader, onSelect = { selectedUri = it })
+        }
+
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Editor(
+                photo = photo,
+                mask = mask,
+                clock = clock,
+                use24Hour = use24Hour,
+                scaleMode = settings.scaleMode,
+                isPhoto = isPhoto,
+                manualOffset = if (isPhoto) savedOffset else null,
+                manualFraming = if (isPhoto) savedFraming else null,
+                onClockChange = { clock = it },
+                onOffsetChange = { offset -> uri?.let { offsetEdits[it] = offset } },
+                onFramingChange = { framing -> uri?.let { framingEdits[it] = framing } },
+            )
+        }
+
+        // The panel for the chosen tool, then the toolbar.
         Column(
             Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0B0920))
-                .statusBarsPadding(),
+                .fillMaxWidth()
+                .background(PanelColor, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)),
         ) {
-            // Top bar.
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cancel", tint = Color.White) }
+            AnimatedContent(
+                targetState = tool,
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                label = "tool panel",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PANEL_HEIGHT)
+                    .padding(top = 16.dp),
+            ) { current ->
+                when (current) {
+                    Tool.FONT -> FontPanel(clock) { clock = it }
+                    Tool.COLOR -> ColorPanel(clock, photo) { clock = it }
+                    Tool.GLASS -> GlassPanel(clock) { clock = it }
+                    Tool.OPTIONS -> OptionsPanel(
+                        clock = clock,
+                        onClockChange = { clock = it },
+                        canResetPhoto = isPhoto && (savedOffset != null || savedFraming != null),
+                        onResetPhoto = {
+                            uri?.let {
+                                offsetEdits[it] = null
+                                framingEdits[it] = null
+                            }
+                        },
+                    )
+                }
+            }
+            Toolbar(selected = tool, onSelect = { tool = it })
+        }
+    }
+}
+
+@Composable
+private fun TopBar(subtitle: String?, onClose: () -> Unit, onDone: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Cancel", tint = Color.White) }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Edit wallpaper", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            if (subtitle != null) {
                 Text(
-                    "Edit wallpaper",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                )
-                IconButton(onClick = {
-                    onDone(StudioResult(clock, offsetEdits.toMap(), framingEdits.toMap()))
-                }) { Icon(Icons.Default.Check, "Done", tint = Color.White) }
-            }
-
-            // Which item is being edited.
-            if (settings.media.size > 1) {
-                ItemStrip(
-                    media = settings.media,
-                    selected = selectedUri,
-                    loader = loader,
-                    onSelect = { selectedUri = it },
+                    subtitle,
+                    color = Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-
-            val uri = selectedUri
-            val info by rememberMediaInfo(uri, loader)
-            val isPhoto = info?.kind == MediaKind.IMAGE
-            var large by remember(uri) { mutableStateOf<Bitmap?>(null) }
-            LaunchedEffect(uri) { large = uri?.let { loader.loadLarge(it) } }
-            val photo = large ?: info?.thumbnail
-            val mask by rememberAlphaMask(uri, uri != null && depthStates[uri] == DepthMasks.State.READY && isPhoto)
-
-            val savedOffset = uri?.let { if (it in offsetEdits) offsetEdits[it] else settings.clockOffsets[it] }
-            val savedFraming = uri?.let { if (it in framingEdits) framingEdits[it] else settings.photoFramings[it] }
-            val use24Hour = when (clock.timeFormat) {
-                TimeFormat.SYSTEM -> systemUses24Hour
-                TimeFormat.H12 -> false
-                TimeFormat.H24 -> true
+        }
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(Brand.gradient)
+                .clickable(role = Role.Button, onClick = onDone)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Done", color = Color.White, style = MaterialTheme.typography.labelLarge)
             }
-
-            Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                Editor(
-                    photo = photo,
-                    mask = mask,
-                    clock = clock,
-                    use24Hour = use24Hour,
-                    scaleMode = settings.scaleMode,
-                    isPhoto = isPhoto,
-                    manualOffset = if (isPhoto) savedOffset else null,
-                    manualFraming = if (isPhoto) savedFraming else null,
-                    onClockChange = { clock = it },
-                    onOffsetChange = { offset -> uri?.let { offsetEdits[it] = offset } },
-                    onFramingChange = { framing -> uri?.let { framingEdits[it] = framing } },
-                )
-            }
-
-            Tray(
-                clock = clock,
-                photo = info?.thumbnail,
-                onClockChange = { clock = it },
-                canResetPhoto = isPhoto && (savedOffset != null || savedFraming != null),
-                onResetPhoto = {
-                    uri?.let {
-                        offsetEdits[it] = null
-                        framingEdits[it] = null
-                    }
-                },
-            )
         }
     }
 }
@@ -241,173 +298,203 @@ private fun Editor(
     onOffsetChange: (Float?) -> Unit,
     onFramingChange: (PhotoFraming?) -> Unit,
 ) {
-    val density = LocalDensity.current
     var geometry by remember { mutableStateOf<PreviewGeometry?>(null) }
     var active by remember { mutableStateOf(DragTarget.NONE) }
+    var clockSelected by remember { mutableStateOf(false) }
+    var showIntroHint by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        delay(4500)
+        showIntroHint = false
+    }
 
-    // Latest values for the gesture loop, which outlives individual recompositions.
+    // Latest values for the gesture loops, which outlive individual recompositions.
     val currentClock by rememberUpdatedState(clock)
     val currentOffset by rememberUpdatedState(manualOffset)
     val currentFraming by rememberUpdatedState(manualFraming)
     val currentGeometry by rememberUpdatedState(geometry)
     val currentIsPhoto by rememberUpdatedState(isPhoto)
     val currentPhoto by rememberUpdatedState(photo)
+    val currentSelected by rememberUpdatedState(clockSelected)
 
-    BoxWithConstraints(
-        Modifier
-            .aspectRatio(9f / 19.5f)
-            .clip(RoundedCornerShape(28.dp))
-            .background(Brand.Ink)
-            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)), RoundedCornerShape(28.dp)),
-    ) {
-        val widthPx = constraints.maxWidth.toFloat()
-        val heightPx = constraints.maxHeight.toFloat()
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        BoxWithConstraints(
+            Modifier
+                .weight(1f, fill = false)
+                .aspectRatio(9f / 19.5f)
+                .clip(RoundedCornerShape(32.dp))
+                .background(Brand.Ink)
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(32.dp)),
+        ) {
+            val widthPx = constraints.maxWidth.toFloat()
+            val heightPx = constraints.maxHeight.toFloat()
 
-        DepthPreview(
-            photo = photo,
-            mask = mask,
-            clock = clock,
-            use24Hour = use24Hour,
-            manualOffset = manualOffset,
-            manualFraming = manualFraming,
-            scaleMode = scaleMode,
-            onGeometry = { geometry = it },
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { point ->
-                        val g = currentGeometry
-                        if (g != null && g.time.expandedContains(point, 40f)) {
-                            // Clock back to its normal place.
-                            if (currentIsPhoto) onOffsetChange(null) else onClockChange(currentClock.copy(position = ClockSettings.DEFAULT_POSITION))
-                        } else if (currentIsPhoto) {
-                            onFramingChange(null)
-                        }
-                    })
-                }
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val g = currentGeometry ?: return@awaitEachGesture
-                        // Everything is computed from the values at the start of the gesture plus the
-                        // total movement since, so no movement is lost between recompositions.
-                        val startClock = currentClock
-                        val startOffset = currentOffset ?: 0f
-                        val startFraming = currentFraming ?: PhotoFraming(1f, 0f, 0f)
-                        val startDigits = g.time.height().coerceAtLeast(1f)
-                        val photoAtStart = currentPhoto
-                        val handle = stretchHandleCenter(g)
-                        active = when {
-                            (down.position - handle).getDistance() < 64f -> DragTarget.STRETCH
-                            g.time.expandedContains(down.position, 32f) -> DragTarget.CLOCK
-                            currentIsPhoto && photoAtStart != null -> DragTarget.PHOTO
-                            else -> DragTarget.NONE
-                        }
-                        var totalPan = Offset.Zero
-                        var totalZoom = 1f
-                        do {
-                            val event = awaitPointerEvent()
-                            if (event.changes.none { it.pressed }) break
-                            val pan = event.calculatePan()
-                            val zoom = event.calculateZoom()
-                            if (pan == Offset.Zero && zoom == 1f) continue
-                            totalPan += pan
-                            totalZoom *= zoom
-                            when (active) {
-                                DragTarget.CLOCK -> {
-                                    val dy = totalPan.y / heightPx
-                                    var updated = startClock.copy(
-                                        width = (startClock.width * totalZoom)
-                                            .coerceIn(ClockSettings.MIN_WIDTH, ClockSettings.MAX_WIDTH),
-                                    )
+            DepthPreview(
+                photo = photo,
+                mask = mask,
+                clock = clock,
+                use24Hour = use24Hour,
+                manualOffset = manualOffset,
+                manualFraming = manualFraming,
+                scaleMode = scaleMode,
+                onGeometry = { geometry = it },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { point ->
+                                clockSelected = currentGeometry?.time?.expandedContains(point, 40f) == true
+                            },
+                            onDoubleTap = { point ->
+                                val g = currentGeometry
+                                if (g != null && g.time.expandedContains(point, 40f)) {
+                                    // Clock back to its normal place.
                                     if (currentIsPhoto) {
-                                        onOffsetChange(
-                                            (startOffset + dy).coerceIn(
-                                                ClockSettings.MIN_POSITION - startClock.position,
-                                                ClockSettings.MAX_POSITION - startClock.position,
+                                        onOffsetChange(null)
+                                    } else {
+                                        onClockChange(currentClock.copy(position = ClockSettings.DEFAULT_POSITION))
+                                    }
+                                } else if (currentIsPhoto) {
+                                    onFramingChange(null)
+                                }
+                            },
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val g = currentGeometry ?: return@awaitEachGesture
+                            // Everything is computed from the values at the start of the gesture plus
+                            // the total movement since, so no movement is lost between recompositions.
+                            val startClock = currentClock
+                            val startOffset = currentOffset ?: 0f
+                            val startFraming = currentFraming ?: PhotoFraming(1f, 0f, 0f)
+                            val startDigits = g.time.height().coerceAtLeast(1f)
+                            val photoAtStart = currentPhoto
+                            val handle = stretchHandleCenter(g)
+                            val target = when {
+                                currentSelected && (down.position - handle).getDistance() < 72f -> DragTarget.STRETCH
+                                g.time.expandedContains(down.position, 32f) -> DragTarget.CLOCK
+                                currentIsPhoto && photoAtStart != null -> DragTarget.PHOTO
+                                else -> DragTarget.NONE
+                            }
+                            var totalPan = Offset.Zero
+                            var totalZoom = 1f
+                            var started = false
+                            do {
+                                val event = awaitPointerEvent()
+                                if (event.changes.none { it.pressed }) break
+                                val pan = event.calculatePan()
+                                val zoom = event.calculateZoom()
+                                if (pan == Offset.Zero && zoom == 1f) continue
+                                totalPan += pan
+                                totalZoom *= zoom
+                                // Ignore tiny movements so a tap stays a tap.
+                                if (!started && totalPan.getDistance() < 12f && abs(totalZoom - 1f) < 0.02f) continue
+                                if (!started) {
+                                    started = true
+                                    active = target
+                                    if (target == DragTarget.CLOCK || target == DragTarget.STRETCH) clockSelected = true
+                                    if (target == DragTarget.PHOTO) clockSelected = false
+                                }
+                                when (target) {
+                                    DragTarget.CLOCK -> {
+                                        val dy = totalPan.y / heightPx
+                                        var updated = startClock.copy(
+                                            width = (startClock.width * totalZoom)
+                                                .coerceIn(ClockSettings.MIN_WIDTH, ClockSettings.MAX_WIDTH),
+                                        )
+                                        if (currentIsPhoto) {
+                                            onOffsetChange(
+                                                (startOffset + dy).coerceIn(
+                                                    ClockSettings.MIN_POSITION - startClock.position,
+                                                    ClockSettings.MAX_POSITION - startClock.position,
+                                                ),
+                                            )
+                                        } else {
+                                            updated = updated.copy(
+                                                position = (startClock.position + dy)
+                                                    .coerceIn(ClockSettings.MIN_POSITION, ClockSettings.MAX_POSITION),
+                                            )
+                                        }
+                                        onClockChange(updated)
+                                    }
+                                    DragTarget.STRETCH -> {
+                                        val stretch = (startClock.stretch * (startDigits + totalPan.y) / startDigits)
+                                            .coerceIn(ClockSettings.MIN_STRETCH, ClockSettings.MAX_STRETCH)
+                                        onClockChange(startClock.copy(stretch = stretch))
+                                    }
+                                    DragTarget.PHOTO -> {
+                                        val p = photoAtStart ?: break
+                                        val zoomed = (startFraming.zoom * totalZoom).coerceIn(1f, PhotoFraming.MAX_ZOOM)
+                                        // Keep the photo covering the screen.
+                                        val fitted = fitRect(p.width, p.height, widthPx, heightPx, scaleMode == ScaleMode.CROP)
+                                        val maxX = ((fitted.width() * zoomed - widthPx) / 2f / widthPx).coerceAtLeast(0f)
+                                        val maxY = ((fitted.height() * zoomed - heightPx) / 2f / heightPx).coerceAtLeast(0f)
+                                        onFramingChange(
+                                            PhotoFraming(
+                                                zoom = zoomed,
+                                                shift = (startFraming.shift + totalPan.y / heightPx).coerceIn(-maxY, maxY),
+                                                shiftX = (startFraming.shiftX + totalPan.x / widthPx).coerceIn(-maxX, maxX),
                                             ),
                                         )
-                                    } else {
-                                        updated = updated.copy(
-                                            position = (startClock.position + dy)
-                                                .coerceIn(ClockSettings.MIN_POSITION, ClockSettings.MAX_POSITION),
-                                        )
                                     }
-                                    onClockChange(updated)
+                                    DragTarget.NONE -> Unit
                                 }
-                                DragTarget.STRETCH -> {
-                                    val stretch = (startClock.stretch * (startDigits + totalPan.y) / startDigits)
-                                        .coerceIn(ClockSettings.MIN_STRETCH, ClockSettings.MAX_STRETCH)
-                                    onClockChange(startClock.copy(stretch = stretch))
-                                }
-                                DragTarget.PHOTO -> {
-                                    val p = photoAtStart ?: break
-                                    val zoomed = (startFraming.zoom * totalZoom).coerceIn(1f, PhotoFraming.MAX_ZOOM)
-                                    // Keep the photo covering the screen.
-                                    val fitted = fitRect(p.width, p.height, widthPx, heightPx, scaleMode == ScaleMode.CROP)
-                                    val maxX = ((fitted.width() * zoomed - widthPx) / 2f / widthPx).coerceAtLeast(0f)
-                                    val maxY = ((fitted.height() * zoomed - heightPx) / 2f / heightPx).coerceAtLeast(0f)
-                                    onFramingChange(
-                                        PhotoFraming(
-                                            zoom = zoomed,
-                                            shift = (startFraming.shift + totalPan.y / heightPx).coerceIn(-maxY, maxY),
-                                            shiftX = (startFraming.shiftX + totalPan.x / widthPx).coerceIn(-maxX, maxX),
-                                        ),
-                                    )
-                                }
-                                DragTarget.NONE -> Unit
-                            }
-                            event.changes.forEach { if (it.positionChanged()) it.consume() }
-                        } while (true)
-                        active = DragTarget.NONE
-                    }
-                },
-        )
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            } while (true)
+                            active = DragTarget.NONE
+                        }
+                    },
+            )
 
-        // Selection outline and stretch handle on top of the clock.
-        val g = geometry
-        if (g != null && clock.enabled && !g.time.isEmpty) {
-            Canvas(Modifier.fillMaxSize()) {
-                val outline = if (active == DragTarget.CLOCK || active == DragTarget.STRETCH) 1f else 0.45f
-                drawRoundRect(
-                    color = Color.White.copy(alpha = outline),
-                    topLeft = Offset(g.time.left - 16f, g.time.top - 16f),
-                    size = androidx.compose.ui.geometry.Size(g.time.width() + 32f, g.time.height() + 32f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(24f),
-                    style = Stroke(width = 3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(18f, 14f))),
-                )
-            }
-            val handle = stretchHandleCenter(g)
-            with(density) {
+            // Selection outline and stretch handle, only while the clock is selected.
+            val g = geometry
+            if (g != null && clockSelected && !g.time.isEmpty) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = if (active == DragTarget.NONE) 0.7f else 1f),
+                        topLeft = Offset(g.time.left - 14f, g.time.top - 14f),
+                        size = Size(g.time.width() + 28f, g.time.height() + 28f),
+                        cornerRadius = CornerRadius(22f),
+                        style = Stroke(width = 3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(16f, 12f))),
+                    )
+                }
+                val handle = stretchHandleCenter(g)
                 Box(
                     Modifier
-                        .offset { IntOffset((handle.x - 28.dp.toPx()).roundToInt(), (handle.y - 10.dp.toPx()).roundToInt()) }
-                        .size(width = 56.dp, height = 20.dp)
-                        .background(Color.White, RoundedCornerShape(10.dp))
-                        .semantics { contentDescription = "Stretch handle: drag to make the digits taller" },
+                        .offset { IntOffset((handle.x - 26.dp.toPx()).roundToInt(), (handle.y - 9.dp.toPx()).roundToInt()) }
+                        .size(width = 52.dp, height = 18.dp)
+                        .background(Color.White, RoundedCornerShape(9.dp))
+                        .semantics { contentDescription = "Stretch handle: drag down to make the digits taller" },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Box(Modifier.size(width = 24.dp, height = 3.dp).background(Brand.Indigo, RoundedCornerShape(2.dp)))
+                    Box(Modifier.size(width = 20.dp, height = 3.dp).background(Brand.Indigo, RoundedCornerShape(2.dp)))
                 }
             }
         }
 
-        // Gesture hints.
-        Text(
-            when (active) {
-                DragTarget.CLOCK -> "Drag to move · pinch to resize"
-                DragTarget.STRETCH -> "Pull to stretch the digits"
-                DragTarget.PHOTO -> "Pinch and drag to frame the photo"
-                DragTarget.NONE -> if (isPhoto) "Drag or pinch the clock or the photo · double-tap to reset" else "Drag or pinch the clock"
-            },
-            color = Color.White,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(12.dp)
-                .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+        // Contextual hint, under the preview so it never covers it.
+        val hint = when {
+            active == DragTarget.CLOCK -> "Drag to move · pinch to resize"
+            active == DragTarget.STRETCH -> "Pull down to stretch the digits"
+            active == DragTarget.PHOTO -> "Pinch and drag to frame · double-tap to reset"
+            showIntroHint -> if (isPhoto) "Tap the clock to select it · pinch the photo to frame it" else "Tap the clock to select it"
+            clockSelected -> "Drag, pinch, or pull the handle · double-tap to reset"
+            else -> null
+        }
+        // Keep showing the last hint while it fades out.
+        val lastHint = remember { arrayOf("") }
+        if (hint != null) lastHint[0] = hint
+        val hintAlpha by animateFloatAsState(if (hint != null) 1f else 0f, label = "hint")
+        Box(Modifier.height(36.dp), contentAlignment = Alignment.Center) {
+            Text(
+                lastHint[0],
+                color = Color.White.copy(alpha = 0.75f),
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.graphicsLayer(alpha = hintAlpha),
+            )
+        }
     }
 }
 
@@ -421,7 +508,7 @@ private fun RectF.expandedContains(point: Offset, margin: Float) =
 private fun ItemStrip(media: List<String>, selected: String?, loader: MediaInfoLoader, onSelect: (String) -> Unit) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
         items(media, key = { it }) { uri ->
@@ -429,12 +516,15 @@ private fun ItemStrip(media: List<String>, selected: String?, loader: MediaInfoL
             val isSelected = uri == selected
             Box(
                 Modifier
-                    .size(width = 40.dp, height = 72.dp)
+                    .size(width = 34.dp, height = 60.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.White.copy(alpha = 0.1f))
-                    .border(if (isSelected) 2.dp else 0.dp, if (isSelected) Color.White else Color.Transparent, RoundedCornerShape(8.dp))
+                    .background(TileColor)
+                    .border(2.dp, if (isSelected) Color.White else Color.Transparent, RoundedCornerShape(8.dp))
                     .clickable { onSelect(uri) }
-                    .semantics { contentDescription = info?.name ?: "Item" },
+                    .semantics {
+                        contentDescription = info?.name ?: "Item"
+                        this.selected = isSelected
+                    },
             ) {
                 info?.thumbnail?.let {
                     Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -444,115 +534,126 @@ private fun ItemStrip(media: List<String>, selected: String?, loader: MediaInfoL
     }
 }
 
-private enum class TrayTab(val label: String) { FONT("Font"), COLOR("Color"), GLASS("Glass"), CLOCK("Clock") }
-
-/** Bottom tray with visual pickers. */
 @Composable
-private fun Tray(
-    clock: ClockSettings,
-    photo: Bitmap?,
-    onClockChange: (ClockSettings) -> Unit,
-    canResetPhoto: Boolean,
-    onResetPhoto: () -> Unit,
-) {
-    var tab by remember { mutableIntStateOf(0) }
-    Column(
+private fun Toolbar(selected: Tool, onSelect: (Tool) -> Unit) {
+    Row(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFF15122E), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .navigationBarsPadding(),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        TabRow(
-            selectedTabIndex = tab,
-            containerColor = Color.Transparent,
-            contentColor = Color.White,
-            indicator = { positions ->
-                TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[tab]), color = Brand.Coral)
-            },
-            divider = {},
-        ) {
-            TrayTab.entries.forEachIndexed { index, item ->
-                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(item.label) })
+        Tool.entries.forEach { tool ->
+            val isSelected = tool == selected
+            val icon: ImageVector = when (tool) {
+                Tool.FONT -> AppIcons.TextFields
+                Tool.COLOR -> AppIcons.Palette
+                Tool.GLASS -> AppIcons.Opacity
+                Tool.OPTIONS -> AppIcons.Tune
             }
-        }
-        // Fixed height so the preview doesn't jump between tabs; scrolls if a tab needs more room
-        // (e.g. with large system font sizes), so every control stays reachable.
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(top = 12.dp, bottom = 8.dp),
-        ) {
-            when (TrayTab.entries[tab]) {
-                TrayTab.FONT -> FontPicker(clock, onClockChange)
-                TrayTab.COLOR -> ColorPicker(clock, photo, onClockChange)
-                TrayTab.GLASS -> GlassPicker(clock, onClockChange)
-                TrayTab.CLOCK -> ClockOptions(clock, onClockChange, canResetPhoto, onResetPhoto)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(role = Role.Tab) { onSelect(tool) }
+                    .semantics { this.selected = isSelected }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 56.dp, height = 32.dp)
+                        .background(if (isSelected) Brand.Coral else Color.Transparent, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    tool.label,
+                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun FontPicker(clock: ClockSettings, onClockChange: (ClockSettings) -> Unit) {
+private fun FontPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> Unit) {
     val context = LocalContext.current
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
         items(ClockFont.entries) { font ->
             val selected = clock.font == font
             val family = remember(font) { FontFamily(ComposeTypeface(ClockFonts.typeface(context, font))) }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
                 modifier = Modifier
-                    .width(76.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if (selected) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.06f))
-                    .border(if (selected) 2.dp else 0.dp, if (selected) Brand.Coral else Color.Transparent, RoundedCornerShape(16.dp))
-                    .clickable { onClockChange(clock.copy(font = font)) }
-                    .padding(vertical = 10.dp),
+                    .size(width = 72.dp, height = 96.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if (selected) Color.White.copy(alpha = 0.16f) else TileColor)
+                    .border(2.dp, if (selected) Brand.Coral else Color.Transparent, RoundedCornerShape(18.dp))
+                    .clickable(role = Role.RadioButton) { onClockChange(clock.copy(font = font)) }
+                    .semantics { this.selected = selected },
             ) {
                 Text(
                     "12",
                     fontFamily = family,
-                    fontSize = 44.sp,
+                    fontSize = 40.sp,
                     color = Color.White,
+                    maxLines = 1,
                     modifier = Modifier.graphicsLayer(scaleX = font.widthScale, scaleY = font.heightScale),
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(font.label, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    font.label,
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ColorPicker(clock: ClockSettings, photo: Bitmap?, onClockChange: (ClockSettings) -> Unit) {
+private fun ColorPanel(clock: ClockSettings, photo: Bitmap?, onClockChange: (ClockSettings) -> Unit) {
     val matched = remember(photo) { photo?.let(::pastelFrom) }
     val colors = listOfNotNull(matched) + ClockSettings.COLORS
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
-        items(colors) { color ->
-            val selected = clock.color == color
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
+            items(colors) { color ->
+                val selected = clock.color == color
                 Box(
                     Modifier
-                        .size(52.dp)
-                        .border(if (selected) 3.dp else 1.dp, if (selected) Brand.Coral else Color.White.copy(alpha = 0.25f), CircleShape)
+                        .size(48.dp)
+                        .border(3.dp, if (selected) Brand.Coral else Color.White.copy(alpha = 0.18f), CircleShape)
                         .padding(5.dp)
-                        .background(Color(color), CircleShape)
-                        .clickable { onClockChange(clock.copy(color = color)) },
+                        .clip(CircleShape)
+                        .background(Color(color))
+                        .clickable(role = Role.RadioButton) { onClockChange(clock.copy(color = color)) }
+                        .semantics { this.selected = selected },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (selected) {
                         Icon(
                             Icons.Default.Check, null,
-                            tint = if (androidx.core.graphics.ColorUtils.calculateLuminance(color) > 0.5) Color.Black else Color.White,
+                            tint = if (ColorUtils.calculateLuminance(color) > 0.5) Color.Black else Color.White,
+                            modifier = Modifier.size(20.dp),
                         )
+                    } else if (color == matched) {
+                        Icon(AppIcons.AutoAwesome, "Matched to the photo", tint = Color.Black.copy(alpha = 0.55f), modifier = Modifier.size(18.dp))
                     }
                 }
-                if (color == matched) {
-                    Text("Photo", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
-                }
             }
+        }
+        if (matched != null) {
+            Text(
+                "The first colour is picked from your photo",
+                color = Color.White.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(start = 20.dp, top = 12.dp),
+            )
         }
     }
 }
@@ -593,86 +694,127 @@ private val GLASS_PRESETS = listOf(
 )
 
 @Composable
-private fun GlassPicker(clock: ClockSettings, onClockChange: (ClockSettings) -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun GlassPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> Unit) {
+    Column {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
             items(GLASS_PRESETS) { preset ->
                 val selected = abs(clock.opacity - preset.opacity) < 0.02f && abs(clock.fade - preset.fade) < 0.02f
-                FilterChip(
-                    selected = selected,
-                    onClick = { onClockChange(clock.copy(opacity = preset.opacity, fade = preset.fade)) },
-                    label = { Text(preset.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        labelColor = Color.White,
-                        selectedContainerColor = Brand.Coral,
-                        selectedLabelColor = Color.White,
-                    ),
-                )
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .background(if (selected) Brand.Coral else TileColor)
+                        .clickable(role = Role.RadioButton) { onClockChange(clock.copy(opacity = preset.opacity, fade = preset.fade)) }
+                        .semantics { this.selected = selected }
+                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                ) {
+                    Text(preset.label, color = Color.White, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
-        TraySlider("Opacity", clock.opacity, ClockSettings.MIN_OPACITY..1f) { onClockChange(clock.copy(opacity = it)) }
-        TraySlider("Fade", clock.fade, 0f..1f) { onClockChange(clock.copy(fade = it)) }
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            PanelSlider("Opacity", clock.opacity, ClockSettings.MIN_OPACITY..1f, Modifier.weight(1f)) {
+                onClockChange(clock.copy(opacity = it))
+            }
+            PanelSlider("Fade", clock.fade, 0f..1f, Modifier.weight(1f)) { onClockChange(clock.copy(fade = it)) }
+        }
     }
 }
 
 @Composable
-private fun TraySlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(64.dp))
+private fun PanelSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    onChange: (Float) -> Unit,
+) {
+    Column(modifier) {
+        Text(label, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
         Slider(
             value = value,
             onValueChange = onChange,
             valueRange = range,
-            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Brand.Coral),
-            modifier = Modifier.weight(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Brand.Coral,
+                inactiveTrackColor = Color.White.copy(alpha = 0.2f),
+            ),
         )
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ClockOptions(
+private fun OptionsPanel(
     clock: ClockSettings,
     onClockChange: (ClockSettings) -> Unit,
     canResetPhoto: Boolean,
     onResetPhoto: () -> Unit,
 ) {
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Time format as one segmented control.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(CircleShape)
+                .background(TileColor),
+        ) {
             TimeFormat.entries.forEach { format ->
-                FilterChip(
-                    selected = clock.timeFormat == format,
-                    onClick = { onClockChange(clock.copy(timeFormat = format)) },
-                    label = { Text(format.label) },
-                    colors = FilterChipDefaults.filterChipColors(labelColor = Color.White, selectedContainerColor = Brand.Coral, selectedLabelColor = Color.White),
-                )
+                val selected = clock.timeFormat == format
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(CircleShape)
+                        .background(if (selected) Brand.Coral else Color.Transparent)
+                        .clickable(role = Role.RadioButton) { onClockChange(clock.copy(timeFormat = format)) }
+                        .semantics { this.selected = selected }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(format.label, color = Color.White, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
-        OptionSwitch("Show date", clock.showDate) { onClockChange(clock.copy(showDate = it)) }
-        OptionSwitch("Auto depth framing", clock.autoPlace) { onClockChange(clock.copy(autoPlace = it)) }
-        if (canResetPhoto) {
-            OutlinedButton(onClick = onResetPhoto, modifier = Modifier.padding(top = 4.dp)) {
-                Icon(Icons.Default.Refresh, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Reset this photo's position and framing", color = Color.White)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ToggleTile(AppIcons.Event, "Date", clock.showDate, Modifier.weight(1f)) {
+                onClockChange(clock.copy(showDate = !clock.showDate))
             }
+            ToggleTile(AppIcons.AutoAwesome, "Framing", clock.autoPlace, Modifier.weight(1f)) {
+                onClockChange(clock.copy(autoPlace = !clock.autoPlace))
+            }
+            ToggleTile(Icons.Default.Refresh, "Reset photo", false, Modifier.weight(1f), enabled = canResetPhoto, onClick = onResetPhoto)
         }
     }
 }
 
 @Composable
-private fun OptionSwitch(label: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
-    // Full-width row, switch at the end; the whole row toggles.
+private fun ToggleTile(
+    icon: ImageVector,
+    label: String,
+    on: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val alpha = if (enabled) 1f else 0.35f
     Row(
         modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onChange(!checked) }
-            .padding(vertical = 4.dp),
+            .height(48.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (on) Brand.Indigo else TileColor)
+            .clickable(enabled = enabled, role = Role.Switch, onClick = onClick)
+            .semantics { this.selected = on }
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
-        Text(label, color = Color.White, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Icon(icon, null, tint = Color.White.copy(alpha = alpha), modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            label,
+            color = Color.White.copy(alpha = alpha),
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

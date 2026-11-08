@@ -1,5 +1,18 @@
 package com.sadikbr.videowallpaper.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import com.sadikbr.videowallpaper.R
+import com.sadikbr.videowallpaper.ui.theme.Brand
 import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
@@ -26,7 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -62,7 +75,7 @@ import com.sadikbr.videowallpaper.wallpaper.VideoWallpaperService
 fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     // Re-check on every return to the app, e.g. after the system "Set wallpaper" screen.
     var wallpaperActive by remember { mutableStateOf(false) }
@@ -80,11 +93,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     ) { uris -> viewModel.addMedia(uris) }
     val addMedia = { pickMedia.launch(arrayOf("image/*", "video/*")) }
 
+    // The editor is a full page of its own (not a pop-up), so it fits between the system bars.
+    val editing = studioFor
+    val loaded = settings
+    if (editing != null && loaded != null) {
+        WallpaperStudio(
+            settings = loaded,
+            startUri = editing.ifEmpty { null },
+            loader = viewModel.mediaInfoLoader,
+            depthStates = depthStates,
+            systemUses24Hour = viewModel.systemUses24Hour(),
+            onDone = { result ->
+                viewModel.applyStudio(result)
+                studioFor = null
+            },
+            onDismiss = { studioFor = null },
+        )
+        return
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text("Wallpaper Slideshow") },
+            TopAppBar(
+                title = { BrandTitle() },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -108,21 +140,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             TimeFormat.SYSTEM -> viewModel.systemUses24Hour()
             TimeFormat.H12 -> false
             TimeFormat.H24 -> true
-        }
-
-        studioFor?.let { start ->
-            WallpaperStudio(
-                settings = current,
-                startUri = start.ifEmpty { null },
-                loader = viewModel.mediaInfoLoader,
-                depthStates = depthStates,
-                systemUses24Hour = viewModel.systemUses24Hour(),
-                onDone = { result ->
-                    viewModel.applyStudio(result)
-                    studioFor = null
-                },
-                onDismiss = { studioFor = null },
-            )
         }
 
         LazyVerticalGrid(
@@ -236,6 +253,27 @@ private fun depthSummary(
         "Finding subjects… ($ready of ${photos.size} photos ready)"
     } else {
         "Depth effect ready on $ready of ${photos.size} photos"
+    }
+}
+
+/** The app's logo (its icon) and name, for the top bar. */
+@Composable
+private fun BrandTitle() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Brand.gradient),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = 1.45f, scaleY = 1.45f),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text("Wallpaper Slideshow", style = MaterialTheme.typography.titleLarge)
     }
 }
 

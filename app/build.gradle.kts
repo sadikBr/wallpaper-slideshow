@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // Screenshot tests of the UI, rendered on the JVM (./gradlew recordPaparazziDebug).
+    id("app.cash.paparazzi")
 }
 
 android {

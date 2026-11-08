@@ -8,6 +8,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.LruCache
+import androidx.annotation.VisibleForTesting
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,6 +31,12 @@ class MediaInfoLoader(context: Context) {
     private val cache = LruCache<String, MediaInfo>(96)
 
     fun cached(uri: String): MediaInfo? = cache.get(uri)
+
+    /** Puts [info] in the cache, so it is used without reading [uri]. For screenshot tests. */
+    @VisibleForTesting
+    fun prime(uri: String, info: MediaInfo) {
+        cache.put(uri, info)
+    }
 
     suspend fun load(uri: String): MediaInfo = cache.get(uri) ?: withContext(Dispatchers.IO) {
         val parsed = Uri.parse(uri)

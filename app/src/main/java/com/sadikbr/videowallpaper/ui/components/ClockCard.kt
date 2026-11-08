@@ -91,48 +91,11 @@ fun ClockCard(
                 Text("Customize clock & photos")
             }
             Text(
-                "Drag, pinch and stretch the clock right on your wallpaper; pick fonts and glass effects.",
+                "Drag, pinch and stretch the clock right on your wallpaper; fonts, colours, glass and clock options are all in there.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 72.dp, end = 16.dp, bottom = 4.dp),
             )
-            OptionGroup("Time format") {
-                TimeFormat.entries.forEach { format ->
-                    FilterChip(
-                        selected = clock.timeFormat == format,
-                        onClick = { onUpdate { it.copy(timeFormat = format) } },
-                        label = { Text(format.label) },
-                    )
-                }
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 72.dp, end = 16.dp, top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Show date", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = clock.showDate, onCheckedChange = { on -> onUpdate { it.copy(showDate = on) } })
-            }
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 72.dp, end = 16.dp, top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Place automatically", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Zooms and shifts each photo so its subject reaches into the clock, like iOS",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Switch(checked = clock.autoPlace, onCheckedChange = { on -> onUpdate { it.copy(autoPlace = on) } })
-            }
-
             Row(
                 Modifier
                     .padding(start = 72.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
@@ -153,21 +116,6 @@ fun ClockCard(
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun OptionGroup(label: String, content: @Composable () -> Unit) {
-    Column(Modifier.padding(start = 72.dp, end = 16.dp, top = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(4.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            content()
         }
     }
 }
