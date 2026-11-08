@@ -27,7 +27,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -146,7 +151,7 @@ fun WallpaperStudio(
             Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0B0920))
-                .systemBarsPadding(),
+                .statusBarsPadding(),
         ) {
             // Top bar.
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -455,7 +460,7 @@ private fun Tray(
         Modifier
             .fillMaxWidth()
             .background(Color(0xFF15122E), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .padding(bottom = 12.dp),
+            .navigationBarsPadding(),
     ) {
         TabRow(
             selectedTabIndex = tab,
@@ -470,7 +475,15 @@ private fun Tray(
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(item.label) })
             }
         }
-        Box(Modifier.fillMaxWidth().height(150.dp).padding(top = 12.dp)) {
+        // Fixed height so the preview doesn't jump between tabs; scrolls if a tab needs more room
+        // (e.g. with large system font sizes), so every control stays reachable.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 12.dp, bottom = 8.dp),
+        ) {
             when (TrayTab.entries[tab]) {
                 TrayTab.FONT -> FontPicker(clock, onClockChange)
                 TrayTab.COLOR -> ColorPicker(clock, photo, onClockChange)
@@ -616,6 +629,7 @@ private fun TraySlider(label: String, value: Float, range: ClosedFloatingPointRa
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ClockOptions(
     clock: ClockSettings,
@@ -624,26 +638,23 @@ private fun ClockOptions(
     onResetPhoto: () -> Unit,
 ) {
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TimeFormat.entries.forEach { format ->
                 FilterChip(
                     selected = clock.timeFormat == format,
                     onClick = { onClockChange(clock.copy(timeFormat = format)) },
                     label = { Text(format.label) },
                     colors = FilterChipDefaults.filterChipColors(labelColor = Color.White, selectedContainerColor = Brand.Coral, selectedLabelColor = Color.White),
-                    modifier = Modifier.padding(end = 8.dp),
                 )
             }
         }
         OptionSwitch("Show date", clock.showDate) { onClockChange(clock.copy(showDate = it)) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OptionSwitch("Auto depth framing", clock.autoPlace, Modifier.weight(1f)) { onClockChange(clock.copy(autoPlace = it)) }
-            if (canResetPhoto) {
-                OutlinedButton(onClick = onResetPhoto) {
-                    Icon(Icons.Default.Refresh, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Reset photo", color = Color.White)
-                }
+        OptionSwitch("Auto depth framing", clock.autoPlace) { onClockChange(clock.copy(autoPlace = it)) }
+        if (canResetPhoto) {
+            OutlinedButton(onClick = onResetPhoto, modifier = Modifier.padding(top = 4.dp)) {
+                Icon(Icons.Default.Refresh, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Reset this photo's position and framing", color = Color.White)
             }
         }
     }
@@ -651,8 +662,16 @@ private fun ClockOptions(
 
 @Composable
 private fun OptionSwitch(label: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
+    // Full-width row, switch at the end; the whole row toggles.
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = Color.White, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Spacer(Modifier.width(12.dp))
         Switch(checked = checked, onCheckedChange = onChange)
     }
