@@ -116,7 +116,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 use24Hour = use24Hour,
                 scaleMode = current.scaleMode,
                 depthState = depthStates[uri],
-                savedOffset = current.clockOffsets[uri] ?: 0f,
+                savedOffset = current.clockOffsets[uri],
                 onSave = { viewModel.setClockOffset(uri, it) },
                 onDismiss = { adjustingClockFor = null },
             )

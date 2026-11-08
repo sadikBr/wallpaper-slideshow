@@ -77,25 +77,27 @@ class SettingsRepository(context: Context) {
         prefs[Keys.CLOCK_FORMAT] = updated.timeFormat.name
         prefs[Keys.CLOCK_SHOW_DATE] = updated.showDate
         prefs[Keys.CLOCK_POSITION] = updated.position
+        prefs[Keys.CLOCK_AUTO_PLACE] = updated.autoPlace
     }
 
-    /** Sets (or with 0, clears) how far the clock is moved for one photo. */
-    suspend fun setClockOffset(uri: String, offset: Float) = dataStore.edit { prefs ->
+    /** Sets how far the clock is moved for one photo, or with null goes back to automatic. */
+    suspend fun setClockOffset(uri: String, offset: Float?) = dataStore.edit { prefs ->
         val offsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]).toMutableMap()
-        if (offset == 0f) offsets.remove(uri) else offsets[uri] = offset
+        if (offset == null) offsets.remove(uri) else offsets[uri] = offset
         prefs[Keys.CLOCK_OFFSETS] = encodeOffsets(offsets)
     }
 
-    suspend fun removeClockOffset(uri: String) = setClockOffset(uri, 0f)
+    suspend fun removeClockOffset(uri: String) = setClockOffset(uri, null)
 
     private fun readClock(prefs: Preferences) = ClockSettings(
         enabled = prefs[Keys.CLOCK_ENABLED] ?: false,
         color = prefs[Keys.CLOCK_COLOR] ?: ClockSettings.COLORS.first(),
         size = enumOrDefault(prefs[Keys.CLOCK_SIZE], ClockSize.LARGE),
-        weight = enumOrDefault(prefs[Keys.CLOCK_WEIGHT], ClockWeight.REGULAR),
+        weight = enumOrDefault(prefs[Keys.CLOCK_WEIGHT], ClockWeight.TALL),
         timeFormat = enumOrDefault(prefs[Keys.CLOCK_FORMAT], TimeFormat.SYSTEM),
         showDate = prefs[Keys.CLOCK_SHOW_DATE] ?: true,
         position = prefs[Keys.CLOCK_POSITION] ?: ClockSettings.DEFAULT_POSITION,
+        autoPlace = prefs[Keys.CLOCK_AUTO_PLACE] ?: true,
     )
 
     private inline fun <reified T : Enum<T>> enumOrDefault(name: String?, default: T): T =
@@ -131,6 +133,7 @@ class SettingsRepository(context: Context) {
         val CLOCK_SHOW_DATE = booleanPreferencesKey("clock_show_date")
         val CLOCK_POSITION = floatPreferencesKey("clock_position")
         val CLOCK_OFFSETS = stringPreferencesKey("clock_offsets")
+        val CLOCK_AUTO_PLACE = booleanPreferencesKey("clock_auto_place")
     }
 
     private companion object {

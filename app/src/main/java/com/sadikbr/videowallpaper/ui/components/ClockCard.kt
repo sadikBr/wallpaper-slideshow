@@ -128,6 +128,24 @@ fun ClockCard(
                 Switch(checked = clock.showDate, onCheckedChange = { on -> onUpdate { it.copy(showDate = on) } })
             }
 
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 72.dp, end = 16.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Place automatically", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Zooms and shifts each photo so its subject reaches into the clock, like iOS",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(checked = clock.autoPlace, onCheckedChange = { on -> onUpdate { it.copy(autoPlace = on) } })
+            }
+
             PositionSlider(
                 position = clock.position,
                 onPositionChange = { position -> onUpdate { it.copy(position = position) } },
@@ -202,7 +220,12 @@ private fun ColorSwatch(color: Color, name: String, selected: Boolean, onClick: 
 private fun PositionSlider(position: Float, onPositionChange: (Float) -> Unit) {
     var value by remember(position) { mutableFloatStateOf(position) }
     Column(Modifier.padding(start = 72.dp, end = 16.dp, top = 8.dp)) {
-        Text("Position", style = MaterialTheme.typography.bodyLarge)
+        Text("Default position", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Used for videos, and for photos where automatic placement doesn't apply",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Slider(
             value = value,
             onValueChange = { value = it },

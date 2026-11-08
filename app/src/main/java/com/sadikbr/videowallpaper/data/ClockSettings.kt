@@ -6,7 +6,17 @@ enum class ClockSize(val label: String, /** Height of the time digits, as a shar
     LARGE("Large", 0.29f),
 }
 
-enum class ClockWeight(val label: String, /** Android font family. */ val fontFamily: String) {
+enum class ClockWeight(
+    val label: String,
+    /** Android font family. */
+    val fontFamily: String,
+    /** Extra digit height on top of [ClockSize.digitHeight]. */
+    val heightScale: Float = 1f,
+    /** Horizontal squeeze of the digits. */
+    val widthScale: Float = 1f,
+) {
+    /** Tall, narrow digits, close to the iOS lock-screen clock. */
+    TALL("Tall", "sans-serif-condensed-light", heightScale = 1.35f, widthScale = 0.86f),
     THIN("Thin", "sans-serif-thin"),
     REGULAR("Regular", "sans-serif"),
     BOLD("Bold", "sans-serif-black"),
@@ -23,15 +33,18 @@ enum class TimeFormat(val label: String) {
  * between the photo and the subject (the "depth effect").
  *
  * @property position vertical centre of the time, as a share of the screen height.
+ * @property autoPlace move the clock per photo so the subject overlaps it (unless the photo
+ *   has its own manual position).
  */
 data class ClockSettings(
     val enabled: Boolean = false,
     val color: Int = COLORS.first(),
     val size: ClockSize = ClockSize.LARGE,
-    val weight: ClockWeight = ClockWeight.REGULAR,
+    val weight: ClockWeight = ClockWeight.TALL,
     val timeFormat: TimeFormat = TimeFormat.SYSTEM,
     val showDate: Boolean = true,
     val position: Float = DEFAULT_POSITION,
+    val autoPlace: Boolean = true,
 ) {
     companion object {
         /** Clock colour choices (ARGB). */
@@ -48,6 +61,6 @@ data class ClockSettings(
         const val MAX_POSITION = 0.60f
 
         /** How far a single photo can move its clock up or down, as a share of the screen height. */
-        const val MAX_PHOTO_OFFSET = 0.25f
+        const val MAX_PHOTO_OFFSET = 0.45f
     }
 }

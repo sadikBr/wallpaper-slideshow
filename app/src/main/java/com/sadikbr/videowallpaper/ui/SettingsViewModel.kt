@@ -93,7 +93,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setTransitionMs(value: Int) = launch { repository.setTransitionMs(value) }
 
     fun updateClock(transform: (ClockSettings) -> ClockSettings) = launch { repository.updateClock(transform) }
-    fun setClockOffset(uri: String, offset: Float) = launch { repository.setClockOffset(uri, offset) }
+    fun setClockOffset(uri: String, offset: Float?) = launch { repository.setClockOffset(uri, offset) }
 
     private fun editMedia(transform: (List<String>) -> List<String>) = launch {
         repository.updateMedia(transform)

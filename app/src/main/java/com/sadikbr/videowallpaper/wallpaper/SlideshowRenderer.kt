@@ -21,7 +21,10 @@ import android.view.Choreographer
 import android.view.Surface
 import com.sadikbr.videowallpaper.clock.ClockLayout
 import com.sadikbr.videowallpaper.clock.ClockPainter
-import com.sadikbr.videowallpaper.clock.DepthRules
+import com.sadikbr.videowallpaper.clock.DepthPlacement
+import com.sadikbr.videowallpaper.clock.DepthArrangement
+import com.sadikbr.videowallpaper.clock.arrangeDepth
+import com.sadikbr.videowallpaper.clock.toBox
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TransitionStyle
@@ -70,7 +73,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var videoTexture = 0
     private var imageTexture = 0
     private var maskTexture = 0
-    private var clockTexture = 0
+    private var timeTexture = 0
+    private var dateTexture = 0
     private var maxTextureSize = 2048
     private lateinit var surfaceTexture: SurfaceTexture
     private lateinit var choreographer: Choreographer
@@ -122,6 +126,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var clockStyle: ClockStyle? = null
     private var clockLayout: ClockLayout? = null
     private var clockKey: List<Any>? = null
+    private var arrangementKey: List<Any?>? = null
+    private var arrangementCache: DepthArrangement? = null
     private val minuteTick = Runnable { onMinuteTick() }
 
     /** Subject cut-out of the photo on screen (grayscale, white = subject), if any. */
@@ -129,12 +135,14 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var depthKey: List<Any?>? = null
     private var depthAllowed = false
 
-    /** Clock position adjustment for the photo on screen. */
-    private var imageClockOffset = 0f
+    /** The user's own clock position for the photo on screen, or null to arrange it automatically. */
+    private var imageClockOffset: Float? = null
+
+
 
     /** Cut-out and clock offset for the photo that becomes current next. */
     private var nextImageMask: Bitmap? = null
-    private var nextImageClockOffset = 0f
+    private var nextImageClockOffset: Float? = 0f
 
     /** The surface the video player should decode into. */
     lateinit var videoSurface: Surface
@@ -166,9 +174,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
      * The current item is now a photo: show the next decoded one (or wait for it).
      *
      * @param mask the photo's subject cut-out, for the depth effect.
-     * @param clockOffset the photo's clock position adjustment.
+     * @param clockOffset the photo's clock position adjustment, or null to place the clock
+     *   automatically so the subject overlaps it.
      */
-    fun activateImage(mask: Bitmap?, clockOffset: Float) = post {
+    fun activateImage(mask: Bitmap?, clockOffset: Float?) = post {
         active = Content.IMAGE
         nextImageMask = mask
         nextImageClockOffset = clockOffset
@@ -228,7 +237,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     /** The clock position adjustment of the photo on screen changed. */
-    fun setCurrentClockOffset(offset: Float) = post {
+    fun setCurrentClockOffset(offset: Float?) = post {
         if (content == Content.IMAGE && imageClockOffset != offset) {
             imageClockOffset = offset
             drawUnlessAnimating()
@@ -426,7 +435,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
     }
 
-    /** Draws the current item, then the clock, then (for photos with depth) the subject on top. */
+    /**
+     * Draws the current item, the time, the subject (for photos with depth, in front of the
+     * time), and finally the date, which always stays readable.
+     */
     private fun drawContent(viewWidth: Int, viewHeight: Int, alpha: Float = 1f, offsetX: Float = 0f) {
         val (contentWidth, contentHeight) = when (content) {
             Content.EMPTY -> 0 to 0
@@ -438,16 +450,18 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             Content.IMAGE -> imageWidth to imageHeight
         }
         val hasContent = content != Content.EMPTY && contentWidth > 0 && contentHeight > 0
+        val style = clockStyle
+        val arrangement = if (style != null) arrangement(style, viewWidth, viewHeight) else DepthArrangement.NONE
 
-        // Scale the content to cover (crop) or fit inside (letterbox) the screen, centred.
+        // Where the content goes, in normalised device coordinates (scaled, then reframed).
         var halfWidth = 1f
         var halfHeight = 1f
+        var centerY = 0f
         if (hasContent) {
-            val scaleX = viewWidth.toFloat() / contentWidth
-            val scaleY = viewHeight.toFloat() / contentHeight
-            val scale = if (scaleMode == ScaleMode.CROP) maxOf(scaleX, scaleY) else minOf(scaleX, scaleY)
-            halfWidth = contentWidth * scale / viewWidth
-            halfHeight = contentHeight * scale / viewHeight
+            val (fittedWidth, fittedHeight) = fittedHalfSize(contentWidth, contentHeight, viewWidth, viewHeight)
+            halfWidth = fittedWidth * arrangement.framing.zoom
+            halfHeight = fittedHeight * arrangement.framing.zoom
+            centerY = -2f * arrangement.framing.shiftY / viewHeight
             val isVideo = content == Content.VIDEO
             drawQuad(
                 program = if (isVideo) videoProgram else imageProgram,
@@ -456,20 +470,50 @@ internal class SlideshowRenderer(windowSurface: Surface) {
                 texMatrix = if (isVideo) videoMatrix else FLIP_VERTICAL,
                 left = offsetX - halfWidth,
                 right = offsetX + halfWidth,
-                bottom = -halfHeight,
-                top = halfHeight,
+                bottom = centerY - halfHeight,
+                top = centerY + halfHeight,
                 alpha = alpha,
             )
         }
 
-        val layout = ensureClock(viewWidth, viewHeight) ?: return
-        val bounds = layout.bounds
-        // The clock bitmap has transparent areas, stored premultiplied: blend accordingly.
+        if (style == null) return
+        val layout = ensureClock(style, viewWidth, viewHeight, arrangement.clockOffset)
+        drawClockPart(timeTexture, layout.timeBounds, viewWidth, viewHeight, alpha, offsetX)
+
+        if (hasContent && content == Content.IMAGE) {
+            val photoRect = RectF(
+                viewWidth / 2f * (1f - halfWidth),
+                viewHeight / 2f * (1f - centerY - halfHeight),
+                viewWidth / 2f * (1f + halfWidth),
+                viewHeight / 2f * (1f - centerY + halfHeight),
+            )
+            if (isDepthAllowed(layout, photoRect)) {
+                // The subject again, in front of the time: the photo drawn through its cut-out.
+                drawQuad(
+                    program = maskedImageProgram,
+                    textureTarget = GLES20.GL_TEXTURE_2D,
+                    texture = imageTexture,
+                    texMatrix = FLIP_VERTICAL,
+                    left = offsetX - halfWidth,
+                    right = offsetX + halfWidth,
+                    bottom = centerY - halfHeight,
+                    top = centerY + halfHeight,
+                    alpha = alpha,
+                    maskTexture = maskTexture,
+                )
+            }
+        }
+
+        layout.dateBounds?.let { drawClockPart(dateTexture, it, viewWidth, viewHeight, alpha, offsetX) }
+    }
+
+    /** Draws one part of the clock (a premultiplied bitmap texture) at [bounds] in screen pixels. */
+    private fun drawClockPart(texture: Int, bounds: RectF, viewWidth: Int, viewHeight: Int, alpha: Float, offsetX: Float) {
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         drawQuad(
             program = clockProgram,
             textureTarget = GLES20.GL_TEXTURE_2D,
-            texture = clockTexture,
+            texture = texture,
             texMatrix = FLIP_VERTICAL,
             left = offsetX + bounds.left / viewWidth * 2f - 1f,
             right = offsetX + bounds.right / viewWidth * 2f - 1f,
@@ -478,34 +522,24 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             alpha = alpha,
         )
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-
-        if (hasContent && content == Content.IMAGE && isDepthAllowed(layout, viewWidth, viewHeight, halfWidth, halfHeight)) {
-            // The subject again, on top of the clock: the photo drawn through its cut-out.
-            drawQuad(
-                program = maskedImageProgram,
-                textureTarget = GLES20.GL_TEXTURE_2D,
-                texture = imageTexture,
-                texMatrix = FLIP_VERTICAL,
-                left = offsetX - halfWidth,
-                right = offsetX + halfWidth,
-                bottom = -halfHeight,
-                top = halfHeight,
-                alpha = alpha,
-                maskTexture = maskTexture,
-            )
-        }
     }
 
-    /** Renders the clock into its texture when the time, style, position or screen changed. */
-    private fun ensureClock(viewWidth: Int, viewHeight: Int): ClockLayout? {
-        val style = clockStyle ?: return null
-        val offset = if (content == Content.IMAGE) imageClockOffset else 0f
+    /** Renders the time and date into their textures when the time, style, position or screen changed. */
+    private fun ensureClock(style: ClockStyle, viewWidth: Int, viewHeight: Int, offset: Float): ClockLayout {
         val minute = System.currentTimeMillis() / 60_000
         val key = listOf(style, offset, minute, viewWidth, viewHeight)
-        if (key == clockKey) return clockLayout
+        clockLayout?.let { if (key == clockKey) return it }
 
         val layout = ClockPainter.layout(style.settings, style.use24Hour, viewWidth, viewHeight, offset)
-        val bounds = layout.bounds
+        renderToTexture(timeTexture, layout.timeBounds) { layout.drawTime(it) }
+        layout.dateBounds?.let { bounds -> renderToTexture(dateTexture, bounds) { layout.drawDate(it) } }
+        clockLayout = layout
+        clockKey = key
+        return layout
+    }
+
+    /** Draws into a bitmap covering [bounds] (screen pixels) and uploads it; snaps [bounds] to whole pixels. */
+    private fun renderToTexture(texture: Int, bounds: RectF, draw: (Canvas) -> Unit) {
         val bitmap = Bitmap.createBitmap(
             bounds.width().roundToInt().coerceAtLeast(1),
             bounds.height().roundToInt().coerceAtLeast(1),
@@ -513,40 +547,68 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         )
         val canvas = Canvas(bitmap)
         canvas.translate(-bounds.left, -bounds.top)
-        layout.draw(canvas)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, clockTexture)
+        draw(canvas)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
-        bitmap.recycle()
-        // Snap the drawn rectangle to the bitmap's whole-pixel size so the text isn't stretched.
+        // Match the drawn rectangle to the bitmap's whole-pixel size so the text isn't stretched.
         bounds.right = bounds.left + bitmap.width
         bounds.bottom = bounds.top + bitmap.height
-
-        clockLayout = layout
-        clockKey = key
-        return layout
+        bitmap.recycle()
     }
 
-    /** Whether the subject may cover the clock for the photo on screen (cached). */
-    private fun isDepthAllowed(
-        layout: ClockLayout,
-        viewWidth: Int,
-        viewHeight: Int,
-        halfWidth: Float,
-        halfHeight: Float,
-    ): Boolean {
-        val mask = subjectMask ?: return false
-        val key = listOf(layout, mask, viewWidth, viewHeight, halfWidth, halfHeight)
-        if (key == depthKey) return depthAllowed
-        val contentRect = RectF(
+    /**
+     * How the photo on screen and the clock are arranged for the depth effect (reframing and
+     * clock offset). Cached, as finding it searches through many framings.
+     */
+    private fun arrangement(style: ClockStyle, viewWidth: Int, viewHeight: Int): DepthArrangement {
+        if (content != Content.IMAGE || imageWidth <= 0 || imageHeight <= 0) return DepthArrangement.NONE
+        val mask = subjectMask
+        val key = listOf(style, mask, imageWidth, imageHeight, viewWidth, viewHeight, scaleMode, imageClockOffset)
+        arrangementCache?.let { if (key == arrangementKey) return it }
+
+        val (halfWidth, halfHeight) = fittedHalfSize(imageWidth, imageHeight, viewWidth, viewHeight)
+        val photoRect = RectF(
             viewWidth / 2f * (1f - halfWidth),
             viewHeight / 2f * (1f - halfHeight),
             viewWidth / 2f * (1f + halfWidth),
             viewHeight / 2f * (1f + halfHeight),
         )
-        depthAllowed = DepthRules.allowsDepth(layout.timeRect, contentRect) { u, v ->
-            val x = (u * (mask.width - 1)).roundToInt()
-            val y = (v * (mask.height - 1)).roundToInt()
-            Color.red(mask.getPixel(x, y)) / 255f
+        val result = arrangeDepth(
+            clock = style.settings,
+            use24Hour = style.use24Hour,
+            width = viewWidth,
+            height = viewHeight,
+            photo = photoRect,
+            cropped = scaleMode == ScaleMode.CROP,
+            manualOffset = imageClockOffset,
+            subjectAt = mask?.let { m -> { u: Float, v: Float -> subjectStrength(m, u, v) } },
+        )
+        arrangementCache = result
+        arrangementKey = key
+        return result
+    }
+
+    /** Half size, in normalised device coordinates, of content scaled to crop or fit the screen. */
+    private fun fittedHalfSize(contentWidth: Int, contentHeight: Int, viewWidth: Int, viewHeight: Int): Pair<Float, Float> {
+        val scaleX = viewWidth.toFloat() / contentWidth
+        val scaleY = viewHeight.toFloat() / contentHeight
+        val scale = if (scaleMode == ScaleMode.CROP) maxOf(scaleX, scaleY) else minOf(scaleX, scaleY)
+        return contentWidth * scale / viewWidth to contentHeight * scale / viewHeight
+    }
+
+    private fun subjectStrength(mask: Bitmap, u: Float, v: Float): Float {
+        val x = (u * (mask.width - 1)).roundToInt()
+        val y = (v * (mask.height - 1)).roundToInt()
+        return Color.red(mask.getPixel(x, y)) / 255f
+    }
+
+    /** Whether the subject may cover the time for the photo on screen (cached). */
+    private fun isDepthAllowed(layout: ClockLayout, photoRect: RectF): Boolean {
+        val mask = subjectMask ?: return false
+        val key = listOf(layout, mask, photoRect.left, photoRect.top, photoRect.right, photoRect.bottom)
+        if (key == depthKey) return depthAllowed
+        depthAllowed = DepthPlacement.allowsDepth(layout.timeRect.toBox(), photoRect.toBox()) { u, v ->
+            subjectStrength(mask, u, v)
         }
         depthKey = key
         return depthAllowed
@@ -705,7 +767,8 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         videoTexture = createTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES)
         imageTexture = createTexture(GLES20.GL_TEXTURE_2D)
         maskTexture = createTexture(GLES20.GL_TEXTURE_2D)
-        clockTexture = createTexture(GLES20.GL_TEXTURE_2D)
+        timeTexture = createTexture(GLES20.GL_TEXTURE_2D)
+        dateTexture = createTexture(GLES20.GL_TEXTURE_2D)
 
         surfaceTexture = SurfaceTexture(videoTexture)
         surfaceTexture.setOnFrameAvailableListener({ onVideoFrameAvailable() }, handler)
@@ -724,7 +787,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             surfaceTexture.release()
         }
         if (context != EGL14.EGL_NO_CONTEXT) {
-            GLES20.glDeleteTextures(4, intArrayOf(videoTexture, imageTexture, maskTexture, clockTexture), 0)
+            GLES20.glDeleteTextures(5, intArrayOf(videoTexture, imageTexture, maskTexture, timeTexture, dateTexture), 0)
             GLES20.glDeleteProgram(videoProgram)
             GLES20.glDeleteProgram(imageProgram)
             GLES20.glDeleteProgram(maskedImageProgram)

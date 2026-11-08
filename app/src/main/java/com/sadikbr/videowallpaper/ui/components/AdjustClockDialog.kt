@@ -19,7 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,12 +28,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.sadikbr.videowallpaper.clock.arrangeDepth
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.ScaleMode
 
-/** Lets the user move the clock up or down for one photo, with a live preview. */
+/**
+ * Lets the user move the clock up or down for one photo, with a live preview.
+ *
+ * @param savedOffset the photo's manual position, or null if it uses the automatic one.
+ */
 @Composable
 fun AdjustClockDialog(
     uri: String,
@@ -42,13 +47,33 @@ fun AdjustClockDialog(
     use24Hour: Boolean,
     scaleMode: ScaleMode,
     depthState: DepthMasks.State?,
-    savedOffset: Float,
-    onSave: (Float) -> Unit,
+    savedOffset: Float?,
+    onSave: (Float?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val info by rememberMediaInfo(uri, loader)
     val mask by rememberAlphaMask(uri, depthState == DepthMasks.State.READY)
-    var offset by remember(uri) { mutableFloatStateOf(savedOffset) }
+    /** Null = automatic (or the default position when automatic placement is off). */
+    var offset by remember(uri) { mutableStateOf(savedOffset) }
+
+    // Where automatic arrangement puts the clock, so the slider can start from there.
+    val photo = info?.thumbnail
+    val cutOut = mask
+    val automatic = remember(photo, cutOut, clock, use24Hour, scaleMode) {
+        if (photo == null) {
+            0f
+        } else {
+            val width = 1080
+            val height = 2340
+            val photoRect = fitRect(photo.width, photo.height, width.toFloat(), height.toFloat(), scaleMode == ScaleMode.CROP)
+            arrangeDepth(
+                clock, use24Hour, width, height, photoRect,
+                cropped = scaleMode == ScaleMode.CROP,
+                manualOffset = null,
+                subjectAt = cutOut?.let { m -> { u: Float, v: Float -> alphaAt(m, u, v) } },
+            ).clockOffset
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(shape = RoundedCornerShape(28.dp)) {
@@ -73,7 +98,7 @@ fun AdjustClockDialog(
                     mask = mask,
                     clock = clock,
                     use24Hour = use24Hour,
-                    clockOffset = offset,
+                    manualOffset = offset,
                     scaleMode = scaleMode,
                     modifier = Modifier
                         .padding(vertical = 8.dp)
@@ -82,8 +107,13 @@ fun AdjustClockDialog(
                         .clip(RoundedCornerShape(20.dp))
                         .background(Color(0xFF101318)),
                 )
+                Text(
+                    if (offset == null && clock.autoPlace) "Placed automatically" else "Placed by you",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
                 Slider(
-                    value = offset,
+                    value = offset ?: automatic,
                     onValueChange = { offset = it },
                     valueRange = -ClockSettings.MAX_PHOTO_OFFSET..ClockSettings.MAX_PHOTO_OFFSET,
                     modifier = Modifier.fillMaxWidth(),
@@ -94,7 +124,9 @@ fun AdjustClockDialog(
                     Text("Lower", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { offset = 0f }, enabled = offset != 0f) { Text("Reset") }
+                    TextButton(onClick = { offset = null }, enabled = offset != null) {
+                        Text(if (clock.autoPlace) "Automatic" else "Reset")
+                    }
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Spacer(Modifier.width(4.dp))

@@ -22,7 +22,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.sadikbr.videowallpaper.clock.ClockPainter
-import com.sadikbr.videowallpaper.clock.DepthRules
+import com.sadikbr.videowallpaper.clock.DepthPlacement
+import com.sadikbr.videowallpaper.clock.DepthArrangement
+import com.sadikbr.videowallpaper.clock.Framing
+import com.sadikbr.videowallpaper.clock.arrangeDepth
+import com.sadikbr.videowallpaper.clock.toRectF
+import com.sadikbr.videowallpaper.clock.toBox
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.ScaleMode
@@ -32,10 +37,12 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
- * A small picture of what the wallpaper shows: the photo, the clock and (when allowed) the
- * photo's subject in front of the clock. Uses the same layout rules as the wallpaper.
+ * A small picture of what the wallpaper shows: the photo, the time, the photo's subject in
+ * front of the time (when allowed) and the date. Uses the same arrangement rules as the
+ * wallpaper, including reframing the photo to bring its subject up to the clock.
  *
  * @param mask alpha-only cut-out of the photo's subject.
+ * @param manualOffset the photo's own clock position, or null to arrange it automatically.
  */
 @Composable
 fun DepthPreview(
@@ -43,7 +50,7 @@ fun DepthPreview(
     mask: Bitmap?,
     clock: ClockSettings,
     use24Hour: Boolean,
-    clockOffset: Float,
+    manualOffset: Float?,
     scaleMode: ScaleMode,
     modifier: Modifier = Modifier,
 ) {
@@ -57,7 +64,19 @@ fun DepthPreview(
         val height = size.height
         if (width <= 0f || height <= 0f) return@Canvas
         clipRect {
-            val target = photo?.let { fitRect(it.width, it.height, width, height, scaleMode == ScaleMode.CROP) }
+            val fitted = photo?.let { fitRect(it.width, it.height, width, height, scaleMode == ScaleMode.CROP) }
+            val subjectAt = mask?.let { m -> { u: Float, v: Float -> alphaAt(m, u, v) } }
+            val arrangement = if (clock.enabled && fitted != null) {
+                arrangeDepth(
+                    clock, use24Hour, width.toInt(), height.toInt(), fitted,
+                    cropped = scaleMode == ScaleMode.CROP,
+                    manualOffset = manualOffset,
+                    subjectAt = subjectAt,
+                )
+            } else {
+                DepthArrangement(Framing.NONE, manualOffset ?: 0f)
+            }
+            val target = fitted?.toBox()?.framed(arrangement.framing.zoom, arrangement.framing.shiftY)?.toRectF()
             val dstOffset = target?.let { IntOffset(it.left.roundToInt(), it.top.roundToInt()) }
             val dstSize = target?.let { IntSize(it.width().roundToInt(), it.height().roundToInt()) }
             if (photoImage != null && dstOffset != null && dstSize != null) {
@@ -65,29 +84,27 @@ fun DepthPreview(
             }
             if (!clock.enabled) return@clipRect
 
-            val layout = ClockPainter.layout(clock, use24Hour, width.toInt(), height.toInt(), clockOffset)
-            drawIntoCanvas { layout.draw(it.nativeCanvas) }
+            val layout = ClockPainter.layout(clock, use24Hour, width.toInt(), height.toInt(), arrangement.clockOffset)
+            drawIntoCanvas { layout.drawTime(it.nativeCanvas) }
 
-            if (photoImage == null || maskImage == null || mask == null || target == null) return@clipRect
-            val depth = DepthRules.allowsDepth(layout.timeRect, target) { u, v ->
-                val x = (u * (mask.width - 1)).roundToInt()
-                val y = (v * (mask.height - 1)).roundToInt()
-                android.graphics.Color.alpha(mask.getPixel(x, y)) / 255f
+            val depth = photoImage != null && maskImage != null && subjectAt != null && target != null &&
+                DepthPlacement.allowsDepth(layout.timeRect.toBox(), target.toBox(), subjectAt)
+            if (depth) {
+                // The subject in front of the time: the photo, kept only where the cut-out is opaque.
+                drawIntoCanvas { canvas ->
+                    canvas.saveLayer(Rect(0f, 0f, width, height), Paint())
+                    drawImage(photoImage!!, dstOffset = dstOffset!!, dstSize = dstSize!!)
+                    drawImage(
+                        maskImage!!,
+                        srcSize = IntSize(maskImage.width, maskImage.height),
+                        dstOffset = dstOffset,
+                        dstSize = dstSize,
+                        blendMode = BlendMode.DstIn,
+                    )
+                    canvas.restore()
+                }
             }
-            if (!depth) return@clipRect
-            // The subject on top: the photo, kept only where the cut-out is opaque.
-            drawIntoCanvas { canvas ->
-                canvas.saveLayer(Rect(0f, 0f, width, height), Paint())
-                drawImage(photoImage, dstOffset = dstOffset!!, dstSize = dstSize!!)
-                drawImage(
-                    maskImage,
-                    srcSize = IntSize(maskImage.width, maskImage.height),
-                    dstOffset = dstOffset,
-                    dstSize = dstSize,
-                    blendMode = BlendMode.DstIn,
-                )
-                canvas.restore()
-            }
+            drawIntoCanvas { layout.drawDate(it.nativeCanvas) }
         }
     }
 }
@@ -117,8 +134,14 @@ private fun rememberCurrentMinute(): State<Long> {
     return minute
 }
 
+internal fun alphaAt(mask: Bitmap, u: Float, v: Float): Float {
+    val x = (u * (mask.width - 1)).roundToInt()
+    val y = (v * (mask.height - 1)).roundToInt()
+    return android.graphics.Color.alpha(mask.getPixel(x, y)) / 255f
+}
+
 /** Where a [srcWidth]×[srcHeight] image goes in the box: cropped to fill, or fitted inside. */
-private fun fitRect(srcWidth: Int, srcHeight: Int, boxWidth: Float, boxHeight: Float, crop: Boolean): RectF {
+internal fun fitRect(srcWidth: Int, srcHeight: Int, boxWidth: Float, boxHeight: Float, crop: Boolean): RectF {
     val scaleX = boxWidth / srcWidth
     val scaleY = boxHeight / srcHeight
     val scale = if (crop) maxOf(scaleX, scaleY) else minOf(scaleX, scaleY)

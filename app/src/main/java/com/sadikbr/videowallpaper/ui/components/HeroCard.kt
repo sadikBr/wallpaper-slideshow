@@ -138,7 +138,7 @@ private fun PhonePreview(
                 mask = mask,
                 clock = settings.clock,
                 use24Hour = use24Hour,
-                clockOffset = uri?.let { settings.clockOffsets[it] } ?: 0f,
+                manualOffset = uri?.let { settings.clockOffsets[it] },
                 scaleMode = settings.scaleMode,
                 modifier = Modifier
                     .fillMaxSize()

@@ -177,7 +177,7 @@ class VideoWallpaperService : WallpaperService() {
             activeRenderer.setTransition(current.transition, current.transitionMs)
             activeRenderer.setClock(clockStyle(current))
             currentUri?.let { uri ->
-                if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentClockOffset(current.clockOffsets[uri] ?: 0f)
+                if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentClockOffset(current.clockOffsets[uri])
             }
             if (current.clock.enabled) {
                 // Cut-outs are made once per photo; ones already done are skipped.
@@ -342,7 +342,7 @@ class VideoWallpaperService : WallpaperService() {
                 val uri = mediaItem.mediaId
                 currentUri = uri
                 val isImage = kinds[uri] == MediaKind.IMAGE
-                val clockOffset = settings?.clockOffsets?.get(uri) ?: 0f
+                val clockOffset = settings?.clockOffsets?.get(uri)
                 // Queued in order: the renderer pairs each photo hand-over with the next decoded photo.
                 scope.launch(activationDispatcher) {
                     if (isImage) target.activateImage(maskFor(uri), clockOffset) else target.activateVideo()

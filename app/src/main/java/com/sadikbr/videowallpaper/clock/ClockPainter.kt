@@ -44,12 +44,13 @@ object ClockPainter {
             typeface = Typeface.create(clock.weight.fontFamily, Typeface.NORMAL)
             textAlign = Paint.Align.CENTER
             letterSpacing = -0.02f
+            textScaleX = clock.weight.widthScale
             textSize = 100f
         }
         // Size the font so the digits are the requested height, but never wider than the screen.
         val digitBounds = Rect()
         timePaint.getTextBounds("0123456789", 0, 10, digitBounds)
-        val targetDigitHeight = clock.size.digitHeight * width
+        val targetDigitHeight = clock.size.digitHeight * clock.weight.heightScale * width
         timePaint.textSize = 100f * targetDigitHeight / digitBounds.height().coerceAtLeast(1)
         val maxTextWidth = width * 0.9f
         val measured = timePaint.measureText(timeText)
@@ -81,18 +82,26 @@ object ClockPainter {
             timeBaseline,
         )
 
-        val bounds = RectF(timeRect)
+        // Room for the shadow and anti-aliasing around each part.
+        val pad = width * 0.03f
+        val timeBounds = RectF(timeRect).apply { inset(-pad, -pad) }
         var dateBaseline = 0f
+        var dateBounds: RectF? = null
         if (dateText != null) {
             dateBaseline = timeRect.top - width * 0.035f
             val dateWidth = datePaint.measureText(dateText)
-            bounds.union(centerX - dateWidth / 2f, dateBaseline + datePaint.ascent(), centerX + dateWidth / 2f, dateBaseline)
+            dateBounds = RectF(
+                centerX - dateWidth / 2f,
+                dateBaseline + datePaint.ascent(),
+                centerX + dateWidth / 2f,
+                dateBaseline + datePaint.descent(),
+            ).apply { inset(-pad, -pad) }
         }
-        // Room for descenders and the shadow.
-        val pad = width * 0.03f
-        bounds.inset(-pad, -pad)
 
-        return ClockLayout(timeText, dateText, timePaint, datePaint, centerX, timeBaseline, dateBaseline, timeRect, bounds)
+        return ClockLayout(
+            timeText, dateText, timePaint, datePaint, centerX, timeBaseline, dateBaseline,
+            timeRect, timeBounds, dateBounds,
+        )
     }
 }
 
@@ -106,42 +115,71 @@ class ClockLayout internal constructor(
     private val dateBaseline: Float,
     /** Where the time digits are, in screen pixels. */
     val timeRect: RectF,
-    /** Everything the clock draws, in screen pixels. */
-    val bounds: RectF,
+    /** Everything the time draws (with shadow), in screen pixels. */
+    val timeBounds: RectF,
+    /** Everything the date draws, in screen pixels; null when the date is hidden. */
+    val dateBounds: RectF?,
 ) {
-    fun draw(canvas: Canvas) {
+    /** The big time. With the depth effect it goes behind the subject. */
+    fun drawTime(canvas: Canvas) = canvas.drawText(timeText, centerX, timeBaseline, timePaint)
+
+    /** The date line. It always stays in front, so it can be read. */
+    fun drawDate(canvas: Canvas) {
         if (dateText != null) canvas.drawText(dateText, centerX, dateBaseline, datePaint)
-        canvas.drawText(timeText, centerX, timeBaseline, timePaint)
     }
 }
 
-/** Rules for when a photo's subject may be drawn in front of the clock. */
-object DepthRules {
+/** Android [RectF] adapters for [DepthPlacement]. */
+fun RectF.toBox() = Box(left, top, right, bottom)
 
-    /** Above this share of the time digits hidden by the subject, depth is turned off. */
-    private const val MAX_COVERED = 0.5f
+fun Box.toRectF() = RectF(left, top, right, bottom)
 
-    /**
-     * Whether the subject may cover the clock. Like iOS, the effect is skipped when it would
-     * hide too much of the time.
-     *
-     * @param contentRect where the photo is drawn, in screen pixels (may extend past the screen).
-     * @param subjectAt subject strength (0..1) at a point of the photo, in 0..1 coordinates.
-     */
-    fun allowsDepth(timeRect: RectF, contentRect: RectF, subjectAt: (u: Float, v: Float) -> Float): Boolean {
-        if (timeRect.isEmpty || contentRect.isEmpty) return false
-        val columns = 24
-        val rows = 8
-        var covered = 0f
-        for (row in 0 until rows) {
-            for (column in 0 until columns) {
-                val x = timeRect.left + timeRect.width() * (column + 0.5f) / columns
-                val y = timeRect.top + timeRect.height() * (row + 0.5f) / rows
-                val u = (x - contentRect.left) / contentRect.width()
-                val v = (y - contentRect.top) / contentRect.height()
-                if (u in 0f..1f && v in 0f..1f) covered += subjectAt(u, v)
-            }
-        }
-        return covered / (columns * rows) <= MAX_COVERED
+/**
+ * How a photo and the clock are arranged for the depth effect.
+ *
+ * @property framing how the photo is zoomed and moved.
+ * @property clockOffset how far the clock is moved, as a share of the screen height.
+ */
+data class DepthArrangement(val framing: Framing, val clockOffset: Float) {
+    companion object {
+        val NONE = DepthArrangement(Framing.NONE, 0f)
     }
+}
+
+/**
+ * Arranges a photo and the clock so the subject overlaps the time, the way iOS does:
+ * first by reframing the photo (the clock stays put); if that can't work, by moving the clock.
+ * Used by the wallpaper and the in-app previews alike.
+ *
+ * @param photo where the photo is drawn without reframing, in screen pixels.
+ * @param cropped whether the photo fills the screen (reframing is only done then).
+ * @param manualOffset the photo's own clock position, if the user set one.
+ * @param subjectAt the photo's subject cut-out, or null if there is none.
+ */
+fun arrangeDepth(
+    clock: ClockSettings,
+    use24Hour: Boolean,
+    width: Int,
+    height: Int,
+    photo: RectF,
+    cropped: Boolean,
+    manualOffset: Float?,
+    subjectAt: ((u: Float, v: Float) -> Float)?,
+): DepthArrangement {
+    if (subjectAt == null || !clock.autoPlace) return DepthArrangement(Framing.NONE, manualOffset ?: 0f)
+    val clockOffset = manualOffset ?: 0f
+    val base = ClockPainter.layout(clock, use24Hour, width, height, clockOffset)
+    if (cropped) {
+        DepthPlacement.autoFraming(base.timeRect.toBox(), photo.toBox(), height.toFloat(), subjectAt = subjectAt)
+            ?.let { return DepthArrangement(it, clockOffset) }
+    }
+    if (manualOffset != null) return DepthArrangement(Framing.NONE, manualOffset)
+    val shift = DepthPlacement.autoShift(
+        time = base.timeRect.toBox(),
+        content = photo.toBox(),
+        minCenterY = ClockSettings.MIN_POSITION * height,
+        maxCenterY = ClockSettings.MAX_POSITION * height,
+        subjectAt = subjectAt,
+    )
+    return DepthArrangement(Framing.NONE, (shift ?: 0f) / height)
 }
