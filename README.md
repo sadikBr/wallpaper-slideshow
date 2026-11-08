@@ -22,12 +22,13 @@ Changes made in the app apply to the running wallpaper immediately.
 
 ## Install
 
-### Download a ready-made APK
-1. Open the repository's **Actions** tab on GitHub and select the latest successful **Build APK** run on `main`.
-2. Download the `VideoSlideshow-apk` artifact and unzip it to get `app-debug.apk`.
-3. Copy it to your phone and open it. Allow installing from that source if Android asks.
+### Download a release
+1. Open the repository's **Releases** page on GitHub and pick the latest version.
+2. Download `VideoSlideshow-vX.Y.Z.apk` on your phone and open it. Allow installing from that source if Android asks.
 
-Every build is signed with the same key (`keystore/debug.keystore`), so new versions install
+Builds of every commit on `main` are also available as the `VideoSlideshow-apk` artifact of the **Build APK** runs in the **Actions** tab.
+
+Every build (releases included) is signed with the same key (`keystore/debug.keystore`), so new versions install
 over old ones without uninstalling.
 
 ### Build it yourself
@@ -64,3 +65,9 @@ To change the slideshow later, open the app again (or the wallpaper's *Settings*
 | Settings screen (Jetpack Compose) | `app/src/main/java/com/sadikbr/videowallpaper/ui/SettingsScreen.kt` |
 
 The app keeps persistent read access to each chosen item (Storage Access Framework), so no storage permission is needed.
+
+## Releasing
+
+1. Update `versionName` (and increase `versionCode`) in `app/build.gradle.kts`.
+2. Add a section for the version to `CHANGELOG.md`.
+3. Push a tag such as `v1.1.0`. The **Release** workflow builds the APK and publishes a GitHub release with it and the changelog section.
