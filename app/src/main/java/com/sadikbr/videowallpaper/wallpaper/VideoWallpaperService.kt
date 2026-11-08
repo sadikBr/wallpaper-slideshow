@@ -39,6 +39,7 @@ import android.text.format.DateFormat
 import com.sadikbr.videowallpaper.clock.ClockFonts
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.VideoMaskSequence
+import com.sadikbr.videowallpaper.data.WidgetData
 import com.sadikbr.videowallpaper.data.TimeFormat
 import kotlin.math.roundToInt
 
@@ -101,6 +102,11 @@ class VideoWallpaperService : WallpaperService() {
                     if (newSettings.clock.enabled && !clockWasEnabled) reloadCurrentMask()
                 }
             }
+            // Widget data (battery, weather, calendar) as it changes.
+            WidgetData.start(this@VideoWallpaperService)
+            scope.launch {
+                WidgetData.snapshot.collect { pushWidgets() }
+            }
             // A photo on screen may get its cut-out while it's showing.
             scope.launch {
                 var readyBefore = emptySet<String>()
@@ -138,6 +144,7 @@ class VideoWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             isEngineVisible = visible
             if (visible) {
+                settings?.widgets?.let { if (it.anyEnabled) WidgetData.refresh(this@VideoWallpaperService, it) }
                 idleReleaseJob?.cancel()
                 val existing = player
                 if (existing != null) {
@@ -178,6 +185,8 @@ class VideoWallpaperService : WallpaperService() {
             activeRenderer.setScaleMode(current.scaleMode)
             activeRenderer.setTransition(current.transition, current.transitionMs)
             activeRenderer.setClock(clockStyle(current))
+            pushWidgets()
+            if (current.widgets.anyEnabled) WidgetData.refresh(this@VideoWallpaperService, current.widgets)
             currentUri?.let { uri ->
                 if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentPlacement(current.clockOffsets[uri], current.photoFramings[uri])
             }
@@ -263,6 +272,27 @@ class VideoWallpaperService : WallpaperService() {
                 }
             }
             return builder.build()
+        }
+
+        /** Sends the widgets' settings and latest data to the renderer. */
+        private fun pushWidgets() {
+            val current = settings ?: return
+            val target = renderer ?: return
+            val widgets = current.widgets
+            if (!widgets.anyEnabled) {
+                target.setWidgets(null)
+                return
+            }
+            val use24Hour = clockStyle(current)?.use24Hour ?: DateFormat.is24HourFormat(this@VideoWallpaperService)
+            target.setWidgets(
+                WidgetRender(
+                    settings = widgets,
+                    snapshot = WidgetData.snapshot.value,
+                    use24Hour = use24Hour,
+                    color = if (current.clock.enabled) current.clock.color else android.graphics.Color.WHITE,
+                    signatureTypeface = ClockFonts.signature(this@VideoWallpaperService),
+                ),
+            )
         }
 
         private fun kindOf(uri: String): MediaKind =

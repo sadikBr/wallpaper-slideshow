@@ -32,6 +32,10 @@ import com.sadikbr.videowallpaper.clock.toBox
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.PhotoFraming
+import com.sadikbr.videowallpaper.data.WidgetSettings
+import com.sadikbr.videowallpaper.data.WidgetSnapshot
+import com.sadikbr.videowallpaper.clock.WidgetLayout
+import com.sadikbr.videowallpaper.clock.WidgetPainter
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
 import com.sadikbr.videowallpaper.data.ScaleMode
@@ -41,7 +45,15 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /** Where the preview drew things, in its own pixels; used by the editor for touch handling. */
-data class PreviewGeometry(val time: RectF, val date: RectF?, val photo: RectF?, val size: Size)
+data class PreviewGeometry(
+    val time: RectF,
+    val date: RectF?,
+    val photo: RectF?,
+    val size: Size,
+    /** Where the widgets are, and the top their position refers to; null if none. */
+    val widgets: RectF? = null,
+    val widgetsTop: Float = 0f,
+)
 
 /**
  * A picture of what the wallpaper shows: the photo, the time, the photo's subject in front of
@@ -63,6 +75,9 @@ fun DepthPreview(
     scaleMode: ScaleMode,
     modifier: Modifier = Modifier,
     manualFraming: PhotoFraming? = null,
+    widgets: WidgetSettings? = null,
+    widgetSnapshot: WidgetSnapshot = WidgetSnapshot(),
+    widgetPlaceholders: Boolean = false,
     onGeometry: ((PreviewGeometry) -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -97,8 +112,19 @@ fun DepthPreview(
             if (photoImage != null && dstOffset != null && dstSize != null) {
                 drawImage(photoImage, dstOffset = dstOffset, dstSize = dstSize, filterQuality = FilterQuality.High)
             }
+            fun drawWidgets(clockBottom: Float?): WidgetLayout? {
+                if (widgets == null || !widgets.anyEnabled) return null
+                val layout = WidgetPainter.layout(
+                    widgets, widgetSnapshot, use24Hour,
+                    if (clock.enabled) clock.color else android.graphics.Color.WHITE,
+                    ClockFonts.signature(context), width.toInt(), height.toInt(), clockBottom, widgetPlaceholders,
+                ) ?: return null
+                drawIntoCanvas { layout.draw(it.nativeCanvas) }
+                return layout
+            }
             if (!clock.enabled) {
-                onGeometry?.invoke(PreviewGeometry(RectF(), null, target, size))
+                val w = drawWidgets(null)
+                onGeometry?.invoke(PreviewGeometry(RectF(), null, target, size, w?.bounds, w?.top ?: 0f))
                 return@clipRect
             }
 
@@ -123,7 +149,8 @@ fun DepthPreview(
                 }
             }
             drawIntoCanvas { layout.drawDate(it.nativeCanvas) }
-            onGeometry?.invoke(PreviewGeometry(layout.timeRect, layout.dateBounds, target, size))
+            val w = drawWidgets(layout.timeRect.bottom)
+            onGeometry?.invoke(PreviewGeometry(layout.timeRect, layout.dateBounds, target, size, w?.bounds, w?.top ?: 0f))
         }
     }
 }

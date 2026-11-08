@@ -2,7 +2,13 @@ package com.sadikbr.videowallpaper.ui.studio
 
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.Manifest
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -96,6 +102,11 @@ import com.sadikbr.videowallpaper.data.PhotoFraming
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TimeFormat
 import com.sadikbr.videowallpaper.data.WallpaperSettings
+import com.sadikbr.videowallpaper.data.WidgetData
+import com.sadikbr.videowallpaper.data.WidgetSettings
+import com.sadikbr.videowallpaper.data.WidgetSnapshot
+import com.sadikbr.videowallpaper.data.WidgetStyle
+import androidx.compose.runtime.collectAsState
 import com.sadikbr.videowallpaper.ui.components.DepthPreview
 import com.sadikbr.videowallpaper.ui.components.PreviewGeometry
 import com.sadikbr.videowallpaper.ui.components.fitRect
@@ -115,11 +126,12 @@ data class StudioResult(
     val clockOffsets: Map<String, Float?>,
     /** Per-photo framings; null values go back to automatic. */
     val framings: Map<String, PhotoFraming?>,
+    val widgets: WidgetSettings,
 )
 
-private enum class DragTarget { NONE, CLOCK, STRETCH, PHOTO }
+private enum class DragTarget { NONE, CLOCK, STRETCH, PHOTO, WIDGETS }
 
-private enum class Tool(val label: String) { FONT("Font"), COLOR("Color"), GLASS("Glass"), OPTIONS("Options") }
+private enum class Tool(val label: String) { FONT("Font"), COLOR("Color"), GLASS("Glass"), WIDGETS("Widgets"), OPTIONS("Options") }
 
 private val StudioBackground = Color(0xFF0B0920)
 private val PanelColor = Color(0xFF17132F)
@@ -150,6 +162,8 @@ fun WallpaperStudio(
     BackHandler(onBack = onDismiss)
 
     var clock by remember { mutableStateOf(settings.clock.copy(enabled = true)) }
+    var widgets by remember { mutableStateOf(settings.widgets) }
+    val widgetSnapshot by WidgetData.snapshot.collectAsState()
     val offsetEdits = remember { mutableStateMapOf<String, Float?>() }
     val framingEdits = remember { mutableStateMapOf<String, PhotoFraming?>() }
     var selectedUri by remember { mutableStateOf(startUri ?: settings.media.firstOrNull()) }
@@ -180,7 +194,7 @@ fun WallpaperStudio(
         TopBar(
             subtitle = info?.name,
             onClose = onDismiss,
-            onDone = { onDone(StudioResult(clock, offsetEdits.toMap(), framingEdits.toMap())) },
+            onDone = { onDone(StudioResult(clock, offsetEdits.toMap(), framingEdits.toMap(), widgets)) },
         )
 
         if (settings.media.size > 1) {
@@ -206,6 +220,9 @@ fun WallpaperStudio(
                 onClockChange = { clock = it },
                 onOffsetChange = { offset -> uri?.let { offsetEdits[it] = offset } },
                 onFramingChange = { framing -> uri?.let { framingEdits[it] = framing } },
+                widgets = widgets,
+                widgetSnapshot = widgetSnapshot,
+                onWidgetsChange = { widgets = it },
             )
         }
 
@@ -228,6 +245,7 @@ fun WallpaperStudio(
                     Tool.FONT -> FontPanel(clock) { clock = it }
                     Tool.COLOR -> ColorPanel(clock, photo) { clock = it }
                     Tool.GLASS -> GlassPanel(clock) { clock = it }
+                    Tool.WIDGETS -> WidgetsPanel(widgets) { widgets = it }
                     Tool.OPTIONS -> OptionsPanel(
                         clock = clock,
                         onClockChange = { clock = it },
@@ -297,6 +315,9 @@ private fun Editor(
     onClockChange: (ClockSettings) -> Unit,
     onOffsetChange: (Float?) -> Unit,
     onFramingChange: (PhotoFraming?) -> Unit,
+    widgets: WidgetSettings,
+    widgetSnapshot: WidgetSnapshot,
+    onWidgetsChange: (WidgetSettings) -> Unit,
 ) {
     var geometry by remember { mutableStateOf<PreviewGeometry?>(null) }
     var active by remember { mutableStateOf(DragTarget.NONE) }
@@ -315,6 +336,7 @@ private fun Editor(
     val currentIsPhoto by rememberUpdatedState(isPhoto)
     val currentPhoto by rememberUpdatedState(photo)
     val currentSelected by rememberUpdatedState(clockSelected)
+    val currentWidgets by rememberUpdatedState(widgets)
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         BoxWithConstraints(
@@ -336,6 +358,9 @@ private fun Editor(
                 manualOffset = manualOffset,
                 manualFraming = manualFraming,
                 scaleMode = scaleMode,
+                widgets = widgets,
+                widgetSnapshot = widgetSnapshot,
+                widgetPlaceholders = true,
                 onGeometry = { geometry = it },
                 modifier = Modifier
                     .fillMaxSize()
@@ -346,7 +371,10 @@ private fun Editor(
                             },
                             onDoubleTap = { point ->
                                 val g = currentGeometry
-                                if (g != null && g.time.expandedContains(point, 40f)) {
+                                if (g?.widgets?.expandedContains(point, 16f) == true) {
+                                    // Widgets back under the clock.
+                                    onWidgetsChange(currentWidgets.copy(position = null))
+                                } else if (g != null && g.time.expandedContains(point, 40f)) {
                                     // Clock back to its normal place.
                                     if (currentIsPhoto) {
                                         onOffsetChange(null)
@@ -371,8 +399,11 @@ private fun Editor(
                             val startDigits = g.time.height().coerceAtLeast(1f)
                             val photoAtStart = currentPhoto
                             val handle = stretchHandleCenter(g)
+                            val startWidgets = currentWidgets
+                            val startWidgetsTop = g.widgetsTop
                             val target = when {
                                 currentSelected && (down.position - handle).getDistance() < 72f -> DragTarget.STRETCH
+                                g.widgets?.expandedContains(down.position, 16f) == true -> DragTarget.WIDGETS
                                 g.time.expandedContains(down.position, 32f) -> DragTarget.CLOCK
                                 currentIsPhoto && photoAtStart != null -> DragTarget.PHOTO
                                 else -> DragTarget.NONE
@@ -438,6 +469,14 @@ private fun Editor(
                                             ),
                                         )
                                     }
+                                    DragTarget.WIDGETS -> {
+                                        val top = (startWidgetsTop + totalPan.y) / heightPx
+                                        onWidgetsChange(
+                                            startWidgets.copy(
+                                                position = top.coerceIn(WidgetSettings.MIN_POSITION, WidgetSettings.MAX_POSITION),
+                                            ),
+                                        )
+                                    }
                                     DragTarget.NONE -> Unit
                                 }
                                 event.changes.forEach { if (it.positionChanged()) it.consume() }
@@ -478,6 +517,7 @@ private fun Editor(
             active == DragTarget.CLOCK -> "Drag to move · pinch to resize"
             active == DragTarget.STRETCH -> "Pull down to stretch the digits"
             active == DragTarget.PHOTO -> "Pinch and drag to frame · double-tap to reset"
+            active == DragTarget.WIDGETS -> "Drag the widgets · double-tap to put them under the clock"
             showIntroHint -> if (isPhoto) "Tap the clock to select it · pinch the photo to frame it" else "Tap the clock to select it"
             clockSelected -> "Drag, pinch, or pull the handle · double-tap to reset"
             else -> null
@@ -548,6 +588,7 @@ private fun Toolbar(selected: Tool, onSelect: (Tool) -> Unit) {
                 Tool.FONT -> AppIcons.TextFields
                 Tool.COLOR -> AppIcons.Palette
                 Tool.GLASS -> AppIcons.Opacity
+                Tool.WIDGETS -> AppIcons.Widgets
                 Tool.OPTIONS -> AppIcons.Tune
             }
             Column(
@@ -556,11 +597,11 @@ private fun Toolbar(selected: Tool, onSelect: (Tool) -> Unit) {
                     .clip(RoundedCornerShape(16.dp))
                     .clickable(role = Role.Tab) { onSelect(tool) }
                     .semantics { this.selected = isSelected }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
             ) {
                 Box(
                     Modifier
-                        .size(width = 56.dp, height = 32.dp)
+                        .size(width = 48.dp, height = 32.dp)
                         .background(if (isSelected) Brand.Coral else Color.Transparent, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -816,5 +857,158 @@ private fun ToggleTile(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/**
+ * Widgets tool: tap a tile to turn a widget on or off (asking for the permission it needs),
+ * edit the signature line, and choose the style and temperature unit.
+ */
+@Composable
+private fun WidgetsPanel(widgets: WidgetSettings, onChange: (WidgetSettings) -> Unit) {
+    val context = LocalContext.current
+    val latest by rememberUpdatedState(widgets)
+    var editingSignature by remember { mutableStateOf(false) }
+
+    // Weather and air quality need the approximate location (read now, while the app is open).
+    var pendingLocationWidget by remember { mutableStateOf<((WidgetSettings) -> WidgetSettings)?>(null) }
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val enable = pendingLocationWidget
+        pendingLocationWidget = null
+        if (granted && enable != null) {
+            val updated = enable(latest)
+            onChange(updated)
+            WidgetData.updateLocation(context) { WidgetData.refresh(context, updated, force = true) }
+        }
+    }
+    val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val updated = latest.copy(calendar = true)
+            onChange(updated)
+            WidgetData.refresh(context, updated, force = true)
+        }
+    }
+
+    fun toggleLocationWidget(on: Boolean, change: (WidgetSettings) -> WidgetSettings) {
+        if (!on) {
+            onChange(change(widgets))
+        } else if (WidgetData.hasPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)) {
+            val updated = change(widgets)
+            onChange(updated)
+            WidgetData.updateLocation(context) { WidgetData.refresh(context, updated, force = true) }
+        } else {
+            pendingLocationWidget = change
+            locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 20.dp)) {
+            item {
+                ToggleTile(AppIcons.Cloud, "Weather", widgets.weather, Modifier.width(112.dp)) {
+                    toggleLocationWidget(!widgets.weather) { it.copy(weather = !widgets.weather) }
+                }
+            }
+            item {
+                ToggleTile(AppIcons.Air, "Air quality", widgets.airQuality, Modifier.width(124.dp)) {
+                    toggleLocationWidget(!widgets.airQuality) { it.copy(airQuality = !widgets.airQuality) }
+                }
+            }
+            item {
+                ToggleTile(AppIcons.Battery, "Battery", widgets.battery, Modifier.width(108.dp)) {
+                    onChange(widgets.copy(battery = !widgets.battery))
+                }
+            }
+            item {
+                ToggleTile(AppIcons.Event, "Calendar", widgets.calendar, Modifier.width(116.dp)) {
+                    when {
+                        widgets.calendar -> onChange(widgets.copy(calendar = false))
+                        WidgetData.hasPermission(context, Manifest.permission.READ_CALENDAR) -> {
+                            val updated = widgets.copy(calendar = true)
+                            onChange(updated)
+                            WidgetData.refresh(context, updated, force = true)
+                        }
+                        else -> calendarPermission.launch(Manifest.permission.READ_CALENDAR)
+                    }
+                }
+            }
+            item {
+                ToggleTile(AppIcons.Gesture, "Signature", widgets.signature.isNotBlank(), Modifier.width(120.dp)) {
+                    editingSignature = true
+                }
+            }
+        }
+        Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Segmented(
+                options = WidgetStyle.entries.map { it.label },
+                selected = widgets.style.ordinal,
+                modifier = Modifier.weight(1f),
+            ) { onChange(widgets.copy(style = WidgetStyle.entries[it])) }
+            val unit = when (widgets.fahrenheit) {
+                null -> if (WidgetData.usesFahrenheit(widgets)) 1 else 0
+                true -> 1
+                false -> 0
+            }
+            Segmented(options = listOf("°C", "°F"), selected = unit, modifier = Modifier.weight(1f)) {
+                onChange(widgets.copy(fahrenheit = it == 1))
+            }
+        }
+    }
+
+    if (editingSignature) {
+        var text by remember { mutableStateOf(widgets.signature) }
+        AlertDialog(
+            onDismissRequest = { editingSignature = false },
+            title = { Text("Signature") },
+            text = {
+                Column {
+                    Text(
+                        "A line of your own text, in a handwriting font. Leave it empty for none.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { if (it.length <= 40) text = it },
+                        singleLine = true,
+                        placeholder = { Text("e.g. your name") },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onChange(widgets.copy(signature = text.trim()))
+                    editingSignature = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingSignature = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
+    Row(
+        modifier
+            .clip(CircleShape)
+            .background(TileColor),
+    ) {
+        options.forEachIndexed { index, label ->
+            val isSelected = index == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(CircleShape)
+                    .background(if (isSelected) Brand.Coral else Color.Transparent)
+                    .clickable(role = Role.RadioButton) { onSelect(index) }
+                    .semantics { this.selected = isSelected }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }

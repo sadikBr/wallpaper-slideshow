@@ -1,6 +1,12 @@
 package com.sadikbr.videowallpaper.ui
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.core.app.ActivityOptionsCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -14,6 +20,7 @@ import com.sadikbr.videowallpaper.data.MediaInfo
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.WallpaperSettings
+import com.sadikbr.videowallpaper.data.WidgetSettings
 import com.sadikbr.videowallpaper.ui.components.ClockCard
 import com.sadikbr.videowallpaper.ui.components.HeroCard
 import com.sadikbr.videowallpaper.ui.components.PlaybackCard
@@ -29,6 +36,17 @@ import org.junit.Test
  */
 class UiScreenshotTest {
 
+    private object NoResults : ActivityResultRegistryOwner {
+        override val activityResultRegistry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(
+                requestCode: Int,
+                contract: ActivityResultContract<I, O>,
+                input: I,
+                options: ActivityOptionsCompat?,
+            ) = Unit
+        }
+    }
+
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, theme = "android:Theme.Material.NoActionBar")
 
@@ -41,7 +59,11 @@ class UiScreenshotTest {
         }
     }
 
-    private val settings = WallpaperSettings(media = listOf(photoUri), clock = ClockSettings(enabled = true))
+    private val settings = WallpaperSettings(
+        media = listOf(photoUri),
+        clock = ClockSettings(enabled = true),
+        widgets = WidgetSettings(weather = true, battery = true, calendar = true, signature = "Wallpaper Slideshow"),
+    )
 
     @Test
     fun editor() = editorWithTool(0)
@@ -53,12 +75,17 @@ class UiScreenshotTest {
     fun editorGlass() = editorWithTool(2)
 
     @Test
-    fun editorOptions() = editorWithTool(3)
+    fun editorWidgets() = editorWithTool(3)
+
+    @Test
+    fun editorOptions() = editorWithTool(4)
 
     private fun editorWithTool(tool: Int) {
         val loader = loaderWithSamplePhoto()
         paparazzi.snapshot {
-            WallpaperSlideshowTheme {
+            // No Activity here: a registry that ignores permission requests.
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoResults) {
+                WallpaperSlideshowTheme {
                 WallpaperStudio(
                     settings = settings,
                     startUri = photoUri,
@@ -69,6 +96,7 @@ class UiScreenshotTest {
                     onDismiss = {},
                     initialTool = tool,
                 )
+                }
             }
         }
     }

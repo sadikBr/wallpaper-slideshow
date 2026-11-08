@@ -188,6 +188,13 @@ class ClockLayout internal constructor(
 /** Loads the clock typefaces once per process. */
 object ClockFonts {
     private val cache = HashMap<ClockFont, Typeface>()
+    private var signature: Typeface? = null
+
+    /** The handwriting font for the widgets' signature line (Great Vibes, SIL OFL). */
+    @Synchronized
+    fun signature(context: Context): Typeface = signature ?: runCatching {
+        Typeface.createFromAsset(context.applicationContext.assets, "fonts/great_vibes.ttf")
+    }.getOrDefault(Typeface.SERIF).also { signature = it }
 
     @Synchronized
     fun typeface(context: Context, font: ClockFont): Typeface = cache.getOrPut(font) {

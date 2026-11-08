@@ -36,6 +36,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaKind
+import com.sadikbr.videowallpaper.data.WidgetData
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.sadikbr.videowallpaper.data.ScaleMode
@@ -124,6 +126,7 @@ private fun PhonePreview(
 ) {
     val info by rememberMediaInfo(uri, loader)
     val mask by rememberAlphaMask(uri, maskReady && settings.clock.enabled)
+    val widgetSnapshot by WidgetData.snapshot.collectAsState()
     val thumbnail = info?.thumbnail
     Box(
         modifier
@@ -133,7 +136,7 @@ private fun PhonePreview(
             .border(4.dp, Color(0xFF2A2F3A), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        if (thumbnail != null || settings.clock.enabled) {
+        if (thumbnail != null || settings.clock.enabled || settings.widgets.anyEnabled) {
             // Mirrors the "fit to screen" and clock settings so their effect is visible here.
             DepthPreview(
                 photo = thumbnail,
@@ -142,6 +145,8 @@ private fun PhonePreview(
                 use24Hour = use24Hour,
                 manualOffset = uri?.let { settings.clockOffsets[it] },
                 scaleMode = settings.scaleMode,
+                widgets = settings.widgets,
+                widgetSnapshot = widgetSnapshot,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(4.dp)

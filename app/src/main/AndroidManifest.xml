@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Widgets: weather and air quality (Open-Meteo), approximate location for them, calendar. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+
     <!-- A live wallpaper only works on devices that support it. -->
     <uses-feature
         android:name="android.software.live_wallpaper"

@@ -43,6 +43,7 @@ class SettingsRepository(context: Context) {
                 clock = readClock(prefs),
                 clockOffsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]),
                 photoFramings = decodeFramings(prefs[Keys.PHOTO_FRAMINGS]),
+                widgets = readWidgets(prefs),
             )
         }
         .distinctUntilChanged()
@@ -115,6 +116,32 @@ class SettingsRepository(context: Context) {
         }
         .toMap()
 
+    suspend fun updateWidgets(transform: (WidgetSettings) -> WidgetSettings) = dataStore.edit { prefs ->
+        val updated = transform(readWidgets(prefs))
+        prefs[Keys.WIDGET_WEATHER] = updated.weather
+        prefs[Keys.WIDGET_AIR] = updated.airQuality
+        prefs[Keys.WIDGET_BATTERY] = updated.battery
+        prefs[Keys.WIDGET_CALENDAR] = updated.calendar
+        prefs[Keys.WIDGET_SIGNATURE] = updated.signature
+        prefs[Keys.WIDGET_STYLE] = updated.style.name
+        if (updated.position == null) prefs.remove(Keys.WIDGET_POSITION) else prefs[Keys.WIDGET_POSITION] = updated.position
+        when (updated.fahrenheit) {
+            null -> prefs.remove(Keys.WIDGET_FAHRENHEIT)
+            else -> prefs[Keys.WIDGET_FAHRENHEIT] = updated.fahrenheit
+        }
+    }
+
+    private fun readWidgets(prefs: Preferences) = WidgetSettings(
+        weather = prefs[Keys.WIDGET_WEATHER] ?: false,
+        airQuality = prefs[Keys.WIDGET_AIR] ?: false,
+        battery = prefs[Keys.WIDGET_BATTERY] ?: false,
+        calendar = prefs[Keys.WIDGET_CALENDAR] ?: false,
+        signature = prefs[Keys.WIDGET_SIGNATURE] ?: "",
+        style = enumOrDefault(prefs[Keys.WIDGET_STYLE], WidgetStyle.GLASS),
+        position = prefs[Keys.WIDGET_POSITION],
+        fahrenheit = prefs[Keys.WIDGET_FAHRENHEIT],
+    )
+
     private fun readClock(prefs: Preferences) = ClockSettings(
         enabled = prefs[Keys.CLOCK_ENABLED] ?: false,
         color = prefs[Keys.CLOCK_COLOR] ?: ClockSettings.COLORS.first(),
@@ -170,6 +197,14 @@ class SettingsRepository(context: Context) {
         val CLOCK_OPACITY = floatPreferencesKey("clock_opacity")
         val CLOCK_FADE = floatPreferencesKey("clock_fade")
         val PHOTO_FRAMINGS = stringPreferencesKey("photo_framings")
+        val WIDGET_WEATHER = booleanPreferencesKey("widget_weather")
+        val WIDGET_AIR = booleanPreferencesKey("widget_air_quality")
+        val WIDGET_BATTERY = booleanPreferencesKey("widget_battery")
+        val WIDGET_CALENDAR = booleanPreferencesKey("widget_calendar")
+        val WIDGET_SIGNATURE = stringPreferencesKey("widget_signature")
+        val WIDGET_STYLE = stringPreferencesKey("widget_style")
+        val WIDGET_POSITION = floatPreferencesKey("widget_position")
+        val WIDGET_FAHRENHEIT = booleanPreferencesKey("widget_fahrenheit")
     }
 
     private companion object {

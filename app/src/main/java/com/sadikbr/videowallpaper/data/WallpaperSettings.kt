@@ -33,6 +33,7 @@ enum class TransitionStyle(val label: String) {
  * @property clock the wallpaper's own clock (with the depth effect on photos).
  * @property clockOffsets per-photo adjustment of the clock position (URI to share of screen height).
  * @property photoFramings per-photo zoom and position set in the editor (otherwise automatic).
+ * @property widgets weather, battery and other widgets drawn on the wallpaper.
  */
 data class WallpaperSettings(
     val media: List<String> = emptyList(),
@@ -47,6 +48,7 @@ data class WallpaperSettings(
     val clock: ClockSettings = ClockSettings(),
     val clockOffsets: Map<String, Float> = emptyMap(),
     val photoFramings: Map<String, PhotoFraming> = emptyMap(),
+    val widgets: WidgetSettings = WidgetSettings(),
 ) {
     companion object {
         /** Choices for "next video every N seconds" (0, playing in full, is a separate switch). */

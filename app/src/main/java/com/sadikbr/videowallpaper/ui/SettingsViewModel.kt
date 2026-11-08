@@ -15,6 +15,7 @@ import com.sadikbr.videowallpaper.data.BuiltInWallpapers
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaKind
+import com.sadikbr.videowallpaper.data.WidgetData
 import com.sadikbr.videowallpaper.ui.studio.StudioResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -40,6 +41,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val depthProgress: StateFlow<Map<String, Float>> = DepthMasks.progress
 
     init {
+        // Widget data: battery now, weather with the location read while the app is open.
+        WidgetData.start(application)
+        viewModelScope.launch {
+            repository.settings.map { it.widgets }.distinctUntilChanged().collect { widgets ->
+                if (widgets.weather || widgets.airQuality) WidgetData.updateLocation(application)
+                if (widgets.anyEnabled) WidgetData.refresh(application, widgets)
+            }
+        }
         // With the depth clock on, make sure every item has its cut-out (done once per item).
         viewModelScope.launch(Dispatchers.IO) {
             repository.settings
@@ -121,6 +130,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         repository.updateClock { result.clock }
         result.clockOffsets.forEach { (uri, offset) -> repository.setClockOffset(uri, offset) }
         result.framings.forEach { (uri, framing) -> repository.setPhotoFraming(uri, framing) }
+        repository.updateWidgets { result.widgets }
     }
 
     fun updateClock(transform: (ClockSettings) -> ClockSettings) = launch { repository.updateClock(transform) }

@@ -30,6 +30,10 @@ import com.sadikbr.videowallpaper.clock.Framing
 import com.sadikbr.videowallpaper.data.ClockSettings
 import com.sadikbr.videowallpaper.data.PhotoFraming
 import com.sadikbr.videowallpaper.data.VideoMaskSequence
+import com.sadikbr.videowallpaper.data.WidgetSettings
+import com.sadikbr.videowallpaper.data.WidgetSnapshot
+import com.sadikbr.videowallpaper.clock.WidgetLayout
+import com.sadikbr.videowallpaper.clock.WidgetPainter
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.TransitionStyle
 import java.nio.ByteBuffer
@@ -41,6 +45,15 @@ import kotlin.math.roundToInt
 
 /** The wallpaper clock's look, with the 12/24-hour choice already resolved. */
 internal data class ClockStyle(val settings: ClockSettings, val use24Hour: Boolean, val typeface: Typeface)
+
+/** What the widgets show and how. */
+internal data class WidgetRender(
+    val settings: WidgetSettings,
+    val snapshot: WidgetSnapshot,
+    val use24Hour: Boolean,
+    val color: Int,
+    val signatureTypeface: Typeface,
+)
 
 /**
  * Draws the slideshow onto the wallpaper surface with OpenGL ES on its own thread.
@@ -81,6 +94,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     private var maskTexture = 0
     private var timeTexture = 0
     private var dateTexture = 0
+    private var widgetTexture = 0
+    private var widgets: WidgetRender? = null
+    private var widgetKey: List<Any?>? = null
+    private var widgetLayout: WidgetLayout? = null
     private var maxTextureSize = 2048
     private lateinit var surfaceTexture: SurfaceTexture
     private lateinit var choreographer: Choreographer
@@ -274,6 +291,15 @@ internal class SlideshowRenderer(windowSurface: Surface) {
     }
 
     /** The wallpaper's own clock, or null for none. */
+    /** The widgets to draw, or null for none. */
+    fun setWidgets(render: WidgetRender?) = post {
+        if (widgets != render) {
+            widgets = render
+            scheduleMinuteTick()
+            drawUnlessAnimating()
+        }
+    }
+
     fun setClock(style: ClockStyle?) = post {
         if (clockStyle != style) {
             clockStyle = style
@@ -546,7 +572,10 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             )
         }
 
-        if (style == null) return
+        if (style == null) {
+            drawWidgets(viewWidth, viewHeight, clockBottom = null, alpha, offsetX)
+            return
+        }
         val layout = ensureClock(style, viewWidth, viewHeight, arrangement.clockOffset)
         drawClockPart(timeTexture, layout.timeBounds, viewWidth, viewHeight, alpha, offsetX)
 
@@ -600,6 +629,28 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         }
 
         layout.dateBounds?.let { drawClockPart(dateTexture, it, viewWidth, viewHeight, alpha, offsetX) }
+        drawWidgets(viewWidth, viewHeight, layout.timeRect.bottom, alpha, offsetX)
+    }
+
+    /** The widgets, on top of everything (like iOS widgets, the subject never covers them). */
+    private fun drawWidgets(viewWidth: Int, viewHeight: Int, clockBottom: Float?, alpha: Float, offsetX: Float) {
+        val render = widgets ?: return
+        if (!render.settings.anyEnabled) return
+        val minute = System.currentTimeMillis() / 60_000
+        val key = listOf(render, minute, viewWidth, viewHeight, clockBottom)
+        val layout = if (key == widgetKey) {
+            widgetLayout
+        } else {
+            WidgetPainter.layout(
+                render.settings, render.snapshot, render.use24Hour, render.color, render.signatureTypeface,
+                viewWidth, viewHeight, clockBottom,
+            )?.also { renderToTexture(widgetTexture, it.bounds) { canvas -> it.draw(canvas) } }
+                .also {
+                    widgetLayout = it
+                    widgetKey = key
+                }
+        } ?: return
+        drawClockPart(widgetTexture, layout.bounds, viewWidth, viewHeight, alpha, offsetX)
     }
 
     /** Draws one part of the clock (a premultiplied bitmap texture) at [bounds] in screen pixels. */
@@ -760,7 +811,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
 
     private fun scheduleMinuteTick() {
         handler.removeCallbacks(minuteTick)
-        if (clockStyle == null) return
+        if (clockStyle == null && widgets == null) return
         val untilNextMinute = 60_000 - System.currentTimeMillis() % 60_000
         handler.postDelayed(minuteTick, untilNextMinute + 20)
     }
@@ -909,6 +960,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
         maskTexture = createTexture(GLES20.GL_TEXTURE_2D)
         timeTexture = createTexture(GLES20.GL_TEXTURE_2D)
         dateTexture = createTexture(GLES20.GL_TEXTURE_2D)
+        widgetTexture = createTexture(GLES20.GL_TEXTURE_2D)
 
         surfaceTexture = SurfaceTexture(videoTexture)
         surfaceTexture.setOnFrameAvailableListener({ onVideoFrameAvailable() }, handler)
@@ -927,7 +979,7 @@ internal class SlideshowRenderer(windowSurface: Surface) {
             surfaceTexture.release()
         }
         if (context != EGL14.EGL_NO_CONTEXT) {
-            GLES20.glDeleteTextures(5, intArrayOf(videoTexture, imageTexture, maskTexture, timeTexture, dateTexture), 0)
+            GLES20.glDeleteTextures(6, intArrayOf(videoTexture, imageTexture, maskTexture, timeTexture, dateTexture, widgetTexture), 0)
             GLES20.glDeleteProgram(videoProgram)
             GLES20.glDeleteProgram(imageProgram)
             GLES20.glDeleteProgram(maskedImageProgram)
