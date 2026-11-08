@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### New
-- **Water clock**: a new Water button in the editor's Glass tool sinks the clock in water. Above the surface the digits look as usual; below it they are tinted blue, softly blurred, rippled and sunk a little, and fade away with depth. A "Water level" slider sets how much of the clock is under water. It works with any of the glass looks, and suits photos of the sea or a lake.
+- **Water clock**: a new Water button in the editor's Glass tool sinks the clock in water. Above the surface the digits look as usual; below it they are tinted blue, softly blurred, rippled and sunk a little, and fade away with depth. A "Water level" slider sets how much of the clock is under water, and a "Gap" slider hides the digits just under the surface, for split above/under water photos: they enter the water at the waterline and show again where the photo's underwater view begins. It works with any of the glass looks, and suits photos of the sea or a lake.
 
 ### Changed
 - The Glass tool's looks now fit across the screen instead of running off the edge.

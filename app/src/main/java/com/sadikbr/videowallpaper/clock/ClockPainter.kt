@@ -164,6 +164,7 @@ object ClockPainter {
             timeText, dateText, timePaint, datePaint, centerX, timeBaseline, dateBaseline, stretch,
             timeRect, timeBounds, dateBounds,
             waterline = clock.waterline?.coerceIn(ClockSettings.MIN_WATERLINE, ClockSettings.MAX_WATERLINE),
+            waterGap = clock.waterGap.coerceIn(0f, ClockSettings.MAX_WATER_GAP),
             // Everything the underwater picture depends on (the time, the look and the geometry).
             // (Not the position: the picture is placed relative to the time, so moving it is free.)
             waterKey = listOf(timeText, clock.copy(position = 0f), width, height),
@@ -187,6 +188,7 @@ class ClockLayout internal constructor(
     /** Everything the date draws, in screen pixels; null when the date is hidden. */
     val dateBounds: RectF?,
     private val waterline: Float? = null,
+    private val waterGap: Float = 0f,
     private val waterKey: Any? = null,
 ) {
     /**
@@ -236,13 +238,16 @@ class ClockLayout internal constructor(
         Canvas(flat).apply {
             translate(-left, -waterY + sink)
             drawDigits(this, paint)
-            // Fade with depth: clear near the surface, nearly gone at the bottom of the digits.
+            // Hidden between the waterline and where the underwater view begins (the gap), then
+            // fading with depth: clear at first, nearly gone at the bottom of the digits.
             translate(left, waterY - sink)
+            val gap = height * waterGap
+            if (gap > 0f) drawRect(0f, 0f, width.toFloat(), gap, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) })
             drawRect(
-                0f, 0f, width.toFloat(), rows.toFloat(),
+                0f, gap, width.toFloat(), rows.toFloat(),
                 Paint().apply {
                     shader = LinearGradient(
-                        0f, 0f, 0f, rows.toFloat(),
+                        0f, gap, 0f, rows.toFloat(),
                         intArrayOf(0xD0000000.toInt(), 0x70000000, 0x18000000),
                         floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
                     )

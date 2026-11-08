@@ -48,6 +48,9 @@ enum class TimeFormat(val label: String) {
  *   the clock grow downwards from there).
  * @property waterline for a clock sunk in water: where the water surface crosses the digits, as a
  *   share of their height from the top; below it the digits ripple and fade. Null for no water.
+ * @property waterGap how far below the waterline the digits stay hidden (share of their height),
+ *   for split above/under water photos: the digits enter the water at the waterline and only
+ *   show again where the photo's underwater view begins.
  * @property autoPlace reframe each photo (or move the clock) so its subject overlaps the time.
  */
 data class ClockSettings(
@@ -63,11 +66,13 @@ data class ClockSettings(
     val position: Float = DEFAULT_POSITION,
     val autoPlace: Boolean = true,
     val waterline: Float? = null,
+    val waterGap: Float = 0f,
 ) {
     companion object {
         const val DEFAULT_WATERLINE = 0.55f
         const val MIN_WATERLINE = 0.1f
         const val MAX_WATERLINE = 0.9f
+        const val MAX_WATER_GAP = 0.5f
 
         /** Clock colour choices (ARGB). */
         val COLORS = listOf(

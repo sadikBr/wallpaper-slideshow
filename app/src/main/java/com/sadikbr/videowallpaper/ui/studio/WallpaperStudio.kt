@@ -830,16 +830,21 @@ private fun GlassPanel(clock: ClockSettings, onClockChange: (ClockSettings) -> U
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PanelSlider("Opacity", clock.opacity, ClockSettings.MIN_OPACITY..1f, Modifier.weight(1f)) {
-                onClockChange(clock.copy(opacity = it))
-            }
             if (waterline != null) {
+                // Under water, the looks above set the opacity; the sliders place the water.
                 // Slider to the right = more of the clock under water.
                 PanelSlider(
                     "Water level", 1f - waterline,
                     (1f - ClockSettings.MAX_WATERLINE)..(1f - ClockSettings.MIN_WATERLINE), Modifier.weight(1f),
                 ) { onClockChange(clock.copy(waterline = 1f - it)) }
+                // Hides the digits just under the surface, down to the photo's underwater view.
+                PanelSlider("Gap", clock.waterGap, 0f..ClockSettings.MAX_WATER_GAP, Modifier.weight(1f)) {
+                    onClockChange(clock.copy(waterGap = it))
+                }
             } else {
+                PanelSlider("Opacity", clock.opacity, ClockSettings.MIN_OPACITY..1f, Modifier.weight(1f)) {
+                    onClockChange(clock.copy(opacity = it))
+                }
                 PanelSlider("Fade", clock.fade, 0f..1f, Modifier.weight(1f)) { onClockChange(clock.copy(fade = it)) }
             }
             WaterButton(on = waterline != null) {

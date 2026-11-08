@@ -84,7 +84,7 @@ class UiScreenshotTest {
     fun editorWater() = editorWithTool(
         2,
         settings.copy(
-            clock = ClockSettings(enabled = true, opacity = 0.6f, waterline = 0.55f),
+            clock = ClockSettings(enabled = true, opacity = 0.6f, waterline = 0.45f, waterGap = 0.15f),
             widgets = WidgetSettings(),
         ),
     )
