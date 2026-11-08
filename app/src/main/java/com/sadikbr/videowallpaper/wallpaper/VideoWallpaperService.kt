@@ -26,6 +26,8 @@ import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.SettingsRepository
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -60,6 +62,17 @@ class VideoWallpaperService : WallpaperService() {
         /** Describes the playlist the current player was built for; a change means rebuilding it. */
         private var builtFor: PlaylistKey? = null
 
+        /** Where to pick up again after the player was released while hidden. */
+        private var resumePoint: ResumePoint? = null
+
+        /** Releases the player once the wallpaper has been out of sight for a while. */
+        private var idleReleaseJob: Job? = null
+
+        /** Retries playback after every item failed in a row. */
+        private var retryJob: Job? = null
+        private var retryDelayMs = FIRST_RETRY_DELAY_MS
+        private var consecutiveErrors = 0
+
         override fun onCreate(holder: SurfaceHolder) {
             super.onCreate(holder)
             setTouchEventsEnabled(false)
@@ -88,7 +101,7 @@ class VideoWallpaperService : WallpaperService() {
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
-            releasePlayer()
+            releasePlayer(rememberPosition = true)
             renderer?.release()
             renderer = null
             super.onSurfaceDestroyed(holder)
@@ -96,12 +109,32 @@ class VideoWallpaperService : WallpaperService() {
 
         override fun onVisibilityChanged(visible: Boolean) {
             isEngineVisible = visible
-            // Only play while someone can see it, to save battery.
-            player?.playWhenReady = visible
+            if (visible) {
+                idleReleaseJob?.cancel()
+                val existing = player
+                if (existing != null) {
+                    existing.playWhenReady = true
+                } else {
+                    // Released while hidden, or waiting for a retry: start again now.
+                    retryJob?.cancel()
+                    refresh()
+                }
+            } else {
+                // Only play while someone can see it, to save battery.
+                player?.playWhenReady = false
+                // Hidden for a while (an app is open, or the screen is off): free the video
+                // decoders. Phones have only a few, and the home screen, lock screen and
+                // wallpaper preview may each run their own copy of this wallpaper.
+                idleReleaseJob?.cancel()
+                idleReleaseJob = scope.launch {
+                    delay(IDLE_RELEASE_DELAY_MS)
+                    releasePlayer(rememberPosition = true)
+                }
+            }
         }
 
         override fun onDestroy() {
-            scope.cancel()
+            scope.cancel() // Also stops pending idle-release and retry jobs.
             releasePlayer()
             renderer?.release()
             renderer = null
@@ -117,6 +150,7 @@ class VideoWallpaperService : WallpaperService() {
             activeRenderer.setTransition(current.transition, current.transitionMs)
             if (current.media.isEmpty()) {
                 releasePlayer()
+                retryJob?.cancel()
                 activeRenderer.showEmpty()
                 return
             }
@@ -131,8 +165,12 @@ class VideoWallpaperService : WallpaperService() {
             val existing = player
             if (existing != null && key == builtFor) {
                 applyLiveSettings(existing, current)
+            } else if (existing == null && !isEngineVisible) {
+                // Not on screen: build the player when the wallpaper becomes visible.
+                return
             } else {
                 releasePlayer()
+                retryJob?.cancel()
                 activeRenderer.clearPending()
                 player = createPlayer(activeRenderer, key).also { applyLiveSettings(it, current) }
                 builtFor = key
@@ -157,7 +195,15 @@ class VideoWallpaperService : WallpaperService() {
 
             exoPlayer.repeatMode = Player.REPEAT_MODE_ALL
             exoPlayer.shuffleModeEnabled = key.shuffle
-            exoPlayer.setMediaItems(key.media.map { buildMediaItem(it, key) })
+            val items = key.media.map { buildMediaItem(it, key) }
+            val resume = resumePoint?.takeIf { it.key == key && it.index in items.indices }
+            resumePoint = null
+            consecutiveErrors = 0
+            if (resume != null) {
+                exoPlayer.setMediaItems(items, resume.index, resume.positionMs)
+            } else {
+                exoPlayer.setMediaItems(items)
+            }
             exoPlayer.playWhenReady = isEngineVisible
             exoPlayer.prepare()
             return exoPlayer
@@ -193,10 +239,30 @@ class VideoWallpaperService : WallpaperService() {
             exoPlayer.setPlaybackSpeed(current.speed)
         }
 
-        private fun releasePlayer() {
-            player?.release()
+        /**
+         * Releases the player. With [rememberPosition], the next player built for the same
+         * playlist continues from the same item and position.
+         */
+        private fun releasePlayer(rememberPosition: Boolean = false) {
+            val current = player ?: return
+            resumePoint = builtFor?.takeIf { rememberPosition }?.let { key ->
+                ResumePoint(key, current.currentMediaItemIndex, current.currentPosition.coerceAtLeast(0))
+            }
+            current.release()
             player = null
             builtFor = null
+        }
+
+        /** Tries building the player again after a delay that grows with each failed attempt. */
+        private fun scheduleRetry() {
+            retryJob?.cancel()
+            val delayMs = retryDelayMs
+            retryDelayMs = (retryDelayMs * 2).coerceAtMost(MAX_RETRY_DELAY_MS)
+            Log.w(TAG, "Nothing could be played; retrying in ${delayMs}ms")
+            retryJob = scope.launch {
+                delay(delayMs)
+                refresh()
+            }
         }
 
         private inner class SlideshowListener(
@@ -216,24 +282,36 @@ class VideoWallpaperService : WallpaperService() {
             }
 
             /** Skips items that can't be played (deleted, unsupported, or access revoked). */
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    // Something plays fine, so earlier failures don't count any more.
+                    consecutiveErrors = 0
+                    retryDelayMs = FIRST_RETRY_DELAY_MS
+                }
+            }
+
+            /**
+             * Skips an item that can't be played right now (busy decoder, deleted file, revoked
+             * access, unsupported format). Items are never dropped from the playlist: errors are
+             * often temporary, so the item gets another chance next time round.
+             */
             override fun onPlayerError(error: PlaybackException) {
                 if (exoPlayer !== player) return
-                val index = exoPlayer.currentMediaItemIndex
-                Log.w(TAG, "Skipping item at position $index: ${error.errorCodeName}", error)
-                // Must come first: removing the item announces the next one, which re-activates.
+                consecutiveErrors++
+                Log.w(TAG, "Item ${exoPlayer.currentMediaItemIndex} failed: ${error.errorCodeName}", error)
                 target.clearPending()
-                if (index in 0 until exoPlayer.mediaItemCount) {
-                    exoPlayer.removeMediaItem(index)
-                }
-                if (exoPlayer.mediaItemCount == 0) {
-                    // Nothing playable is left: show the empty background instead.
-                    // Posted so the player isn't released from inside its own callback.
+                if (consecutiveErrors >= exoPlayer.mediaItemCount) {
+                    // Every item failed in a row; most likely temporary. Keep the last picture on
+                    // screen and try again shortly. Posted so the player isn't released from
+                    // inside its own callback.
                     scope.launch {
                         if (exoPlayer !== player) return@launch
-                        releasePlayer()
-                        renderer?.showEmpty()
+                        releasePlayer(rememberPosition = false)
+                        scheduleRetry()
                     }
                 } else {
+                    val next = exoPlayer.nextMediaItemIndex
+                    if (next != C.INDEX_UNSET) exoPlayer.seekToDefaultPosition(next)
                     exoPlayer.prepare()
                 }
             }
@@ -289,6 +367,8 @@ class VideoWallpaperService : WallpaperService() {
             }
     }
 
+    private data class ResumePoint(val key: PlaylistKey, val index: Int, val positionMs: Long)
+
     private data class PlaylistKey(
         val media: List<String>,
         val shuffle: Boolean,
@@ -299,6 +379,9 @@ class VideoWallpaperService : WallpaperService() {
 
     private companion object {
         const val TAG = "VideoWallpaper"
+        const val IDLE_RELEASE_DELAY_MS = 10_000L
+        const val FIRST_RETRY_DELAY_MS = 2_000L
+        const val MAX_RETRY_DELAY_MS = 60_000L
 
         /** Longest side of a decoded photo; larger photos are downsampled (by powers of two). */
         const val MAX_IMAGE_DIMENSION = 2560
