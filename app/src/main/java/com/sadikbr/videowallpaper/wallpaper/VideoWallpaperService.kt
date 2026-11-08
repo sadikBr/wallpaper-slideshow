@@ -26,6 +26,7 @@ import com.sadikbr.videowallpaper.data.MediaKind
 import com.sadikbr.videowallpaper.data.SettingsRepository
 import com.sadikbr.videowallpaper.data.WallpaperSettings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.util.concurrent.Executors
+import android.text.format.DateFormat
+import com.sadikbr.videowallpaper.data.DepthMasks
+import com.sadikbr.videowallpaper.data.TimeFormat
 import kotlin.math.roundToInt
 
 /**
@@ -56,6 +61,16 @@ class VideoWallpaperService : WallpaperService() {
         private var settings: WallpaperSettings? = null
         private var isEngineVisible = false
 
+        /**
+         * Hands "this item is now current" to the renderer one at a time, in order. Photo
+         * hand-overs first load the photo's cut-out from storage, so they run off the main thread.
+         */
+        private val activationExecutor = Executors.newSingleThreadExecutor()
+        private val activationDispatcher = activationExecutor.asCoroutineDispatcher()
+
+        /** The item on screen (as far as the player has announced). */
+        private var currentUri: String? = null
+
         /** Photo/video kind per URI, so the content resolver is asked only once per item. */
         private val kinds = HashMap<String, MediaKind>()
 
@@ -78,8 +93,19 @@ class VideoWallpaperService : WallpaperService() {
             setTouchEventsEnabled(false)
             scope.launch {
                 repository.settings.collect { newSettings ->
+                    val clockWasEnabled = settings?.clock?.enabled == true
                     settings = newSettings
                     refresh()
+                    if (newSettings.clock.enabled && !clockWasEnabled) reloadCurrentMask()
+                }
+            }
+            // A photo on screen may get its cut-out while it's showing.
+            scope.launch {
+                var readyBefore = emptySet<String>()
+                DepthMasks.states.collect { states ->
+                    val ready = states.filterValues { it == DepthMasks.State.READY }.keys
+                    if (currentUri in ready && currentUri !in readyBefore) reloadCurrentMask()
+                    readyBefore = ready
                 }
             }
         }
@@ -135,6 +161,7 @@ class VideoWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             scope.cancel() // Also stops pending idle-release and retry jobs.
+            activationExecutor.shutdown()
             releasePlayer()
             renderer?.release()
             renderer = null
@@ -148,6 +175,14 @@ class VideoWallpaperService : WallpaperService() {
 
             activeRenderer.setScaleMode(current.scaleMode)
             activeRenderer.setTransition(current.transition, current.transitionMs)
+            activeRenderer.setClock(clockStyle(current))
+            currentUri?.let { uri ->
+                if (kindOf(uri) == MediaKind.IMAGE) activeRenderer.setCurrentClockOffset(current.clockOffsets[uri] ?: 0f)
+            }
+            if (current.clock.enabled) {
+                // Cut-outs are made once per photo; ones already done are skipped.
+                DepthMasks.ensure(this@VideoWallpaperService, current.media.filter { kindOf(it) == MediaKind.IMAGE })
+            }
             if (current.media.isEmpty()) {
                 releasePlayer()
                 retryJob?.cancel()
@@ -212,7 +247,7 @@ class VideoWallpaperService : WallpaperService() {
         @OptIn(UnstableApi::class)
         private fun buildMediaItem(uri: String, key: PlaylistKey): MediaItem {
             val parsed = Uri.parse(uri)
-            val kind = kinds.getOrPut(uri) { MediaKind.of(this@VideoWallpaperService, parsed) }
+            val kind = kindOf(uri)
             val builder = MediaItem.Builder().setUri(parsed).setMediaId(uri)
             when (kind) {
                 // Playback speed also speeds up photos, so scale their time to stay in real seconds.
@@ -226,6 +261,35 @@ class VideoWallpaperService : WallpaperService() {
                 }
             }
             return builder.build()
+        }
+
+        private fun kindOf(uri: String): MediaKind =
+            kinds.getOrPut(uri) { MediaKind.of(this@VideoWallpaperService, Uri.parse(uri)) }
+
+        private fun clockStyle(current: WallpaperSettings): ClockStyle? {
+            val clock = current.clock
+            if (!clock.enabled) return null
+            val use24Hour = when (clock.timeFormat) {
+                TimeFormat.SYSTEM -> DateFormat.is24HourFormat(this@VideoWallpaperService)
+                TimeFormat.H12 -> false
+                TimeFormat.H24 -> true
+            }
+            return ClockStyle(clock, use24Hour)
+        }
+
+        /** Loads the cut-out of [uri] if the depth clock is on (call off the main thread). */
+        private fun maskFor(uri: String): Bitmap? =
+            if (settings?.clock?.enabled == true) DepthMasks.loadMask(this@VideoWallpaperService, uri) else null
+
+        /** Re-sends the cut-out of the photo on screen, e.g. once it has been made. */
+        private fun reloadCurrentMask() {
+            val uri = currentUri ?: return
+            if (kindOf(uri) != MediaKind.IMAGE) return
+            val target = renderer ?: return
+            scope.launch(activationDispatcher) {
+                val mask = maskFor(uri)
+                if (mask != null) target.setCurrentMask(mask)
+            }
         }
 
         /** Settings that can change on a running player without rebuilding the playlist. */
@@ -275,9 +339,13 @@ class VideoWallpaperService : WallpaperService() {
                 // No check against `player`: the first item is announced while it's still being built,
                 // and a released player sends no events.
                 if (mediaItem == null) return
-                when (kinds[mediaItem.mediaId]) {
-                    MediaKind.IMAGE -> target.activateImage()
-                    else -> target.activateVideo()
+                val uri = mediaItem.mediaId
+                currentUri = uri
+                val isImage = kinds[uri] == MediaKind.IMAGE
+                val clockOffset = settings?.clockOffsets?.get(uri) ?: 0f
+                // Queued in order: the renderer pairs each photo hand-over with the next decoded photo.
+                scope.launch(activationDispatcher) {
+                    if (isImage) target.activateImage(maskFor(uri), clockOffset) else target.activateVideo()
                 }
             }
 

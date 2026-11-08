@@ -480,4 +480,65 @@ object AppIcons {
             }
         }
     }
+
+    val Layers: ImageVector by lazy {
+        materialIcon(name = "Rounded.Layers") {
+            materialPath {
+                moveTo(12.6f, 18.06f)
+                curveToRelative(-0.36f, 0.28f, -0.87f, 0.28f, -1.23f, 0.0f)
+                lineToRelative(-6.15f, -4.78f)
+                curveToRelative(-0.36f, -0.28f, -0.86f, -0.28f, -1.22f, 0.0f)
+                curveToRelative(-0.51f, 0.4f, -0.51f, 1.17f, 0.0f, 1.57f)
+                lineToRelative(6.76f, 5.26f)
+                curveToRelative(0.72f, 0.56f, 1.73f, 0.56f, 2.46f, 0.0f)
+                lineToRelative(6.76f, -5.26f)
+                curveToRelative(0.51f, -0.4f, 0.51f, -1.17f, 0.0f, -1.57f)
+                lineToRelative(-0.01f, -0.01f)
+                curveToRelative(-0.36f, -0.28f, -0.86f, -0.28f, -1.22f, 0.0f)
+                lineToRelative(-6.15f, 4.79f)
+                close()
+                moveTo(13.23f, 15.04f)
+                lineToRelative(6.76f, -5.26f)
+                curveToRelative(0.51f, -0.4f, 0.51f, -1.18f, 0.0f, -1.58f)
+                lineToRelative(-6.76f, -5.26f)
+                curveToRelative(-0.72f, -0.56f, -1.73f, -0.56f, -2.46f, 0.0f)
+                lineTo(4.01f, 8.21f)
+                curveToRelative(-0.51f, 0.4f, -0.51f, 1.18f, 0.0f, 1.58f)
+                lineToRelative(6.76f, 5.26f)
+                curveToRelative(0.72f, 0.56f, 1.74f, 0.56f, 2.46f, -0.01f)
+                close()
+            }
+        }
+    }
+
+    val Schedule: ImageVector by lazy {
+        materialIcon(name = "Rounded.Schedule") {
+            materialPath {
+                moveTo(11.99f, 2.0f)
+                curveTo(6.47f, 2.0f, 2.0f, 6.48f, 2.0f, 12.0f)
+                reflectiveCurveToRelative(4.47f, 10.0f, 9.99f, 10.0f)
+                curveTo(17.52f, 22.0f, 22.0f, 17.52f, 22.0f, 12.0f)
+                reflectiveCurveTo(17.52f, 2.0f, 11.99f, 2.0f)
+                close()
+                moveTo(12.0f, 20.0f)
+                curveToRelative(-4.42f, 0.0f, -8.0f, -3.58f, -8.0f, -8.0f)
+                reflectiveCurveToRelative(3.58f, -8.0f, 8.0f, -8.0f)
+                reflectiveCurveToRelative(8.0f, 3.58f, 8.0f, 8.0f)
+                reflectiveCurveToRelative(-3.58f, 8.0f, -8.0f, 8.0f)
+                close()
+                moveTo(11.78f, 7.0f)
+                horizontalLineToRelative(-0.06f)
+                curveToRelative(-0.4f, 0.0f, -0.72f, 0.32f, -0.72f, 0.72f)
+                verticalLineToRelative(4.72f)
+                curveToRelative(0.0f, 0.35f, 0.18f, 0.68f, 0.49f, 0.86f)
+                lineToRelative(4.15f, 2.49f)
+                curveToRelative(0.34f, 0.2f, 0.78f, 0.1f, 0.98f, -0.24f)
+                curveToRelative(0.21f, -0.34f, 0.1f, -0.79f, -0.25f, -0.99f)
+                lineToRelative(-3.87f, -2.3f)
+                lineTo(12.5f, 7.72f)
+                curveToRelative(0.0f, -0.4f, -0.32f, -0.72f, -0.72f, -0.72f)
+                close()
+            }
+        }
+    }
 }

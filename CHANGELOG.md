@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0] - 2026-11-08
+
+### Added
+- **Depth clock**: the wallpaper can draw its own large clock, and in photos with a clear subject (people, pets, buildings, objects) the subject stands in front of the time, like iOS depth-effect wallpapers.
+  - Subjects are found on the phone with Google's ML Kit (no upload); each photo is analysed once and the result is saved.
+  - Like iOS, the effect is skipped for a photo when the subject would hide too much of the time.
+  - Choose the clock's colour, size, style (thin, regular, bold), 12/24-hour time, date line and position.
+  - Move the clock for a single photo with **Adjust clock** in that photo's menu, with a live preview.
+  - Videos show the clock in front for now; a depth effect for videos is planned.
+- The preview at the top of the app shows the clock and depth effect.
+
+Note: the phone's own lock-screen clock is still drawn on top of any wallpaper. To avoid two clocks on the lock screen, hide or shrink it (on Samsung: Good Lock › LockStar). The home screen has no system clock, so the effect works there as is.
+
+### Also in this release
+Everything from 1.0.1 below (fix for the wallpaper getting stuck on a plain blue background).
+
+### Install
+Download `VideoSlideshow-v1.1.0.apk` below and open it on your phone. It installs over earlier versions and keeps your settings.
+
 ## [1.0.1] - 2026-11-08
 
 ### Fixed
@@ -7,9 +26,6 @@
 
 ### Changed
 - The video player is released after the wallpaper has been hidden for 10 seconds and resumes from the same spot when it's visible again. This frees the phone's video decoders for apps and for the lock-screen copy of the wallpaper, and saves battery.
-
-### Install
-Download `VideoSlideshow-v1.0.1.apk` below and open it on your phone. It installs over 1.0.0 and keeps your photos, videos and settings.
 
 ## [1.0.0] - 2026-11-08
 

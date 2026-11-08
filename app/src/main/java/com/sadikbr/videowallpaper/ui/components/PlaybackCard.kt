@@ -195,7 +195,7 @@ private fun formatSeconds(ms: Int): String {
 }
 
 @Composable
-private fun SettingRow(
+internal fun SettingRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
@@ -241,7 +241,7 @@ private fun SettingRow(
  * so dragging doesn't restart the wallpaper on every step.
  */
 @Composable
-private fun <T> StepSlider(
+internal fun <T> StepSlider(
     options: List<T>,
     selected: T,
     label: (T) -> String,
@@ -272,7 +272,7 @@ private fun <T> StepSlider(
 }
 
 @Composable
-private fun ItemDivider() {
+internal fun ItemDivider() {
     HorizontalDivider(
         Modifier.padding(start = 72.dp, end = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),

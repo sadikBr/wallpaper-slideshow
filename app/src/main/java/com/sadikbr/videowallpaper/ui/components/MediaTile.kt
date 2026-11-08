@@ -43,6 +43,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.MediaKind
+import com.sadikbr.videowallpaper.data.DepthMasks
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.sadikbr.videowallpaper.ui.theme.AppIcons
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,6 +62,10 @@ fun MediaTile(
     onMoveEarlier: () -> Unit,
     onMoveLater: () -> Unit,
     onRemove: () -> Unit,
+    /** Cut-out progress, shown when the depth clock is on (null hides it). */
+    depthState: DepthMasks.State?,
+    /** Opens the per-photo clock position editor; null when not applicable. */
+    onAdjustClock: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val info by rememberMediaInfo(uri, loader)
@@ -151,6 +158,34 @@ fun MediaTile(
                 Text("$position", style = MaterialTheme.typography.labelMedium, color = Color.White)
             }
 
+            if (info?.kind == MediaKind.IMAGE) {
+                when (depthState) {
+                    DepthMasks.State.READY -> Icon(
+                        AppIcons.Layers,
+                        contentDescription = "Depth effect ready",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                            .size(22.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                            .padding(4.dp),
+                    )
+                    DepthMasks.State.PROCESSING -> CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                            .size(22.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                            .padding(4.dp)
+                            .semantics { contentDescription = "Finding the subject" },
+                    )
+                    else -> Unit
+                }
+            }
+
             Icon(
                 Icons.Default.MoreVert,
                 contentDescription = "Options",
@@ -173,6 +208,13 @@ fun MediaTile(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
+            if (onAdjustClock != null && info?.kind == MediaKind.IMAGE) {
+                DropdownMenuItem(
+                    text = { Text("Adjust clock") },
+                    leadingIcon = { Icon(AppIcons.Schedule, contentDescription = null) },
+                    onClick = { menuOpen = false; onAdjustClock() },
                 )
             }
             DropdownMenuItem(

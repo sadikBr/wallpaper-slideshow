@@ -34,7 +34,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.sadikbr.videowallpaper.data.DepthMasks
 import com.sadikbr.videowallpaper.data.MediaKind
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.sadikbr.videowallpaper.data.ScaleMode
 import com.sadikbr.videowallpaper.data.MediaInfoLoader
 import com.sadikbr.videowallpaper.data.WallpaperSettings
@@ -46,6 +49,8 @@ fun HeroCard(
     settings: WallpaperSettings,
     loader: MediaInfoLoader,
     wallpaperActive: Boolean,
+    use24Hour: Boolean,
+    depthStates: Map<String, DepthMasks.State>,
     onApply: () -> Unit,
 ) {
     val hasMedia = settings.media.isNotEmpty()
@@ -61,10 +66,13 @@ fun HeroCard(
             Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val first = settings.media.firstOrNull()
             PhonePreview(
-                uri = settings.media.firstOrNull(),
+                uri = first,
                 loader = loader,
-                scaleMode = settings.scaleMode,
+                settings = settings,
+                use24Hour = use24Hour,
+                maskReady = first != null && depthStates[first] == DepthMasks.State.READY,
                 modifier = Modifier.width(96.dp),
             )
             Spacer(Modifier.width(20.dp))
@@ -94,10 +102,13 @@ fun HeroCard(
 private fun PhonePreview(
     uri: String?,
     loader: MediaInfoLoader,
-    scaleMode: ScaleMode,
+    settings: WallpaperSettings,
+    use24Hour: Boolean,
+    maskReady: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val info by rememberMediaInfo(uri, loader)
+    val mask by rememberAlphaMask(uri, maskReady && settings.clock.enabled)
     val thumbnail = info?.thumbnail
     Box(
         modifier
@@ -107,13 +118,20 @@ private fun PhonePreview(
             .border(4.dp, Color(0xFF2A2F3A), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        if (thumbnail != null) {
-            Image(
-                bitmap = thumbnail.asImageBitmap(),
-                contentDescription = "Preview of the first item",
-                // Mirror the chosen "fit to screen" setting so its effect is visible here.
-                contentScale = if (scaleMode == ScaleMode.CROP) ContentScale.Crop else ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().padding(4.dp).clip(RoundedCornerShape(14.dp)),
+        if (thumbnail != null || settings.clock.enabled) {
+            // Mirrors the "fit to screen" and clock settings so their effect is visible here.
+            DepthPreview(
+                photo = thumbnail,
+                mask = mask,
+                clock = settings.clock,
+                use24Hour = use24Hour,
+                clockOffset = uri?.let { settings.clockOffsets[it] } ?: 0f,
+                scaleMode = settings.scaleMode,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .semantics { contentDescription = "Preview of the wallpaper" },
             )
         } else {
             Icon(

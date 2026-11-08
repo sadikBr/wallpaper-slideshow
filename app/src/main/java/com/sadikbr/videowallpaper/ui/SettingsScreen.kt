@@ -44,6 +44,12 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sadikbr.videowallpaper.ui.components.EmptyMediaCard
+import com.sadikbr.videowallpaper.ui.components.AdjustClockDialog
+import com.sadikbr.videowallpaper.ui.components.ClockCard
+import com.sadikbr.videowallpaper.data.DepthMasks
+import com.sadikbr.videowallpaper.data.MediaInfoLoader
+import com.sadikbr.videowallpaper.data.MediaKind
+import com.sadikbr.videowallpaper.data.TimeFormat
 import com.sadikbr.videowallpaper.ui.components.HeroCard
 import com.sadikbr.videowallpaper.ui.components.PlaybackCard
 import com.sadikbr.videowallpaper.ui.components.SectionHeader
@@ -63,6 +69,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         wallpaperActive = isOurWallpaperActive(context)
         onPauseOrDispose { }
     }
+
+    val depthStates by viewModel.depthStates.collectAsStateWithLifecycle()
+    var adjustingClockFor by remember { mutableStateOf<String?>(null) }
 
     val pickMedia = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -93,6 +102,26 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             return@Scaffold
         }
 
+        val use24Hour = when (current.clock.timeFormat) {
+            TimeFormat.SYSTEM -> viewModel.systemUses24Hour()
+            TimeFormat.H12 -> false
+            TimeFormat.H24 -> true
+        }
+
+        adjustingClockFor?.let { uri ->
+            AdjustClockDialog(
+                uri = uri,
+                loader = viewModel.mediaInfoLoader,
+                clock = current.clock,
+                use24Hour = use24Hour,
+                scaleMode = current.scaleMode,
+                depthState = depthStates[uri],
+                savedOffset = current.clockOffsets[uri] ?: 0f,
+                onSave = { viewModel.setClockOffset(uri, it) },
+                onDismiss = { adjustingClockFor = null },
+            )
+        }
+
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 104.dp),
             modifier = Modifier.fillMaxSize(),
@@ -110,6 +139,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     settings = current,
                     loader = viewModel.mediaInfoLoader,
                     wallpaperActive = wallpaperActive,
+                    use24Hour = use24Hour,
+                    depthStates = depthStates,
                     onApply = { openWallpaperPicker(context) },
                 )
             }
@@ -136,6 +167,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     onMoveEarlier = { viewModel.moveItem(index, index - 1) },
                     onMoveLater = { viewModel.moveItem(index, index + 1) },
                     onRemove = { viewModel.removeItem(uri) },
+                    depthState = if (current.clock.enabled) depthStates[uri] else null,
+                    onAdjustClock = if (current.clock.enabled) ({ adjustingClockFor = uri }) else null,
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -157,7 +190,36 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     onTransitionMsChange = viewModel::setTransitionMs,
                 )
             }
+
+            fullWidth("clock-header") {
+                Spacer(Modifier.height(8.dp))
+                SectionHeader(title = "Clock")
+            }
+            fullWidth("clock") {
+                ClockCard(
+                    clock = current.clock,
+                    depthSummary = depthSummary(current.media, viewModel.mediaInfoLoader, depthStates),
+                    onUpdate = viewModel::updateClock,
+                )
+            }
         }
+    }
+}
+
+/** e.g. "Depth effect ready on 4 of 6 photos", or progress while photos are being analysed. */
+private fun depthSummary(
+    media: List<String>,
+    loader: MediaInfoLoader,
+    states: Map<String, DepthMasks.State>,
+): String {
+    val photos = media.filter { loader.cached(it)?.kind == MediaKind.IMAGE }
+    if (photos.isEmpty()) return "Add photos for the depth effect; videos show the clock in front"
+    val ready = photos.count { states[it] == DepthMasks.State.READY }
+    val processing = photos.count { states[it] == DepthMasks.State.PROCESSING }
+    return if (processing > 0) {
+        "Finding subjects… ($ready of ${photos.size} photos ready)"
+    } else {
+        "Depth effect ready on $ready of ${photos.size} photos"
     }
 }
 

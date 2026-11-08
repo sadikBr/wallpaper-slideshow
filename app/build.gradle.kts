@@ -12,8 +12,8 @@ android {
         applicationId = "com.sadikbr.videowallpaper"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -74,4 +74,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-datasource:$media3")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // On-device subject cut-out for the depth clock (model delivered by Google Play services).
+    implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
+    implementation("com.google.android.gms:play-services-base:18.5.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }

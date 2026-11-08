@@ -15,6 +15,7 @@ will loop one after another behind your home screen (and lock screen, on most ph
 - **Sound:** off by default; turn it on if you want the videos' audio.
 - **Video speed:** 0.5× to 2×.
 - **Transitions:** crossfade, fade to black, zoom, slide, or none, lasting 0.3 to 2 seconds.
+- **Depth clock:** a big clock drawn by the wallpaper, with the subject of each photo standing in front of it (like iOS depth-effect wallpapers). Subjects are found on the phone with ML Kit; colour, size, style, 12/24-hour time, date and position are adjustable, and the clock can be moved per photo.
 - **Battery friendly:** playback pauses when the wallpaper isn't visible (an app is open or the screen is off), audio isn't decoded while muted, and large photos are decoded at a reduced size.
 - **Robust:** items that are deleted or can't be opened are skipped automatically.
 
@@ -52,6 +53,8 @@ To change the slideshow later, open the app again (or the wallpaper's *Settings*
 ## Notes
 
 - Some phone makers (for example Samsung) only allow live wallpapers on the home screen.
+- The phone's own lock-screen clock is always drawn above any wallpaper. With the depth clock on, hide or shrink it to avoid two clocks (Samsung: Good Lock › LockStar).
+- The depth clock needs Google Play services, which downloads the subject-detection model the first time.
 - Very high-resolution videos (4K and above) use more battery; 1080p is plenty for a background.
 - Supported photo formats: JPEG, PNG, WebP, BMP, HEIF/HEIC and AVIF (as supported by the phone).
 
@@ -62,6 +65,8 @@ To change the slideshow later, open the app again (or the wallpaper's *Settings*
 | Live wallpaper (sequences the playlist with Media3 ExoPlayer) | `app/src/main/java/com/sadikbr/videowallpaper/wallpaper/VideoWallpaperService.kt` |
 | OpenGL renderer (draws video frames and photos, crop/fit, transitions) | `app/src/main/java/com/sadikbr/videowallpaper/wallpaper/SlideshowRenderer.kt` |
 | Settings storage (DataStore, shared with the wallpaper) | `app/src/main/java/com/sadikbr/videowallpaper/data/SettingsRepository.kt` |
+| Clock layout and depth rules (shared by wallpaper and previews) | `app/src/main/java/com/sadikbr/videowallpaper/clock/ClockPainter.kt` |
+| Subject cut-outs with ML Kit | `app/src/main/java/com/sadikbr/videowallpaper/data/DepthMasks.kt` |
 | Settings screen (Jetpack Compose) | `app/src/main/java/com/sadikbr/videowallpaper/ui/SettingsScreen.kt` |
 
 The app keeps persistent read access to each chosen item (Storage Access Framework), so no storage permission is needed.

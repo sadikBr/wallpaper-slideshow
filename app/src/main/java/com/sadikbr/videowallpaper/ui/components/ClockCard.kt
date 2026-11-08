@@ -1,0 +1,218 @@
+package com.sadikbr.videowallpaper.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import com.sadikbr.videowallpaper.data.ClockSettings
+import com.sadikbr.videowallpaper.data.ClockSize
+import com.sadikbr.videowallpaper.data.ClockWeight
+import com.sadikbr.videowallpaper.data.TimeFormat
+import com.sadikbr.videowallpaper.ui.theme.AppIcons
+
+private val COLOR_NAMES = listOf("White", "Ice blue", "Warm yellow", "Pink", "Mint", "Black")
+
+/**
+ * Settings for the wallpaper's own clock and the depth effect.
+ *
+ * @param depthSummary e.g. "4 of 6 photos ready", or null when there's nothing to report.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ClockCard(
+    clock: ClockSettings,
+    depthSummary: String?,
+    onUpdate: ((ClockSettings) -> ClockSettings) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            SettingRow(
+                icon = AppIcons.Schedule,
+                title = "Depth clock",
+                subtitle = if (clock.enabled) {
+                    depthSummary ?: "Subjects in your photos stand in front of the time"
+                } else {
+                    "Show a big clock that photo subjects can stand in front of"
+                },
+            ) {
+                Switch(checked = clock.enabled, onCheckedChange = { on -> onUpdate { it.copy(enabled = on) } })
+            }
+            if (!clock.enabled) return@Column
+
+            ItemDivider()
+            OptionGroup("Colour") {
+                ClockSettings.COLORS.forEachIndexed { index, color ->
+                    ColorSwatch(
+                        color = Color(color),
+                        name = COLOR_NAMES.getOrElse(index) { "Colour ${index + 1}" },
+                        selected = clock.color == color,
+                        onClick = { onUpdate { it.copy(color = color) } },
+                    )
+                }
+            }
+            OptionGroup("Size") {
+                ClockSize.entries.forEach { size ->
+                    FilterChip(
+                        selected = clock.size == size,
+                        onClick = { onUpdate { it.copy(size = size) } },
+                        label = { Text(size.label) },
+                    )
+                }
+            }
+            OptionGroup("Style") {
+                ClockWeight.entries.forEach { weight ->
+                    FilterChip(
+                        selected = clock.weight == weight,
+                        onClick = { onUpdate { it.copy(weight = weight) } },
+                        label = { Text(weight.label) },
+                    )
+                }
+            }
+            OptionGroup("Time format") {
+                TimeFormat.entries.forEach { format ->
+                    FilterChip(
+                        selected = clock.timeFormat == format,
+                        onClick = { onUpdate { it.copy(timeFormat = format) } },
+                        label = { Text(format.label) },
+                    )
+                }
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 72.dp, end = 16.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Show date", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Switch(checked = clock.showDate, onCheckedChange = { on -> onUpdate { it.copy(showDate = on) } })
+            }
+
+            PositionSlider(
+                position = clock.position,
+                onPositionChange = { position -> onUpdate { it.copy(position = position) } },
+            )
+
+            Row(
+                Modifier
+                    .padding(start = 72.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                    .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Your phone's own lock-screen clock is still shown on top. To avoid two clocks, " +
+                        "hide or shrink it (Samsung: Good Lock › LockStar). Use \"Adjust clock\" on a photo " +
+                        "to move the clock for that photo only.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OptionGroup(label: String, content: @Composable () -> Unit) {
+    Column(Modifier.padding(start = 72.dp, end = 16.dp, top = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(4.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: Color, name: String, selected: Boolean, onClick: () -> Unit) {
+    val ring = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    Box(
+        Modifier
+            .size(40.dp)
+            .border(if (selected) 3.dp else 1.dp, ring, CircleShape)
+            .padding(5.dp)
+            .background(color, CircleShape)
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .semantics { contentDescription = name },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** Vertical position of the clock; saved when the finger is lifted. */
+@Composable
+private fun PositionSlider(position: Float, onPositionChange: (Float) -> Unit) {
+    var value by remember(position) { mutableFloatStateOf(position) }
+    Column(Modifier.padding(start = 72.dp, end = 16.dp, top = 8.dp)) {
+        Text("Position", style = MaterialTheme.typography.bodyLarge)
+        Slider(
+            value = value,
+            onValueChange = { value = it },
+            onValueChangeFinished = { onPositionChange(value) },
+            valueRange = ClockSettings.MIN_POSITION..ClockSettings.MAX_POSITION,
+        )
+        Row(Modifier.fillMaxWidth()) {
+            Text("Higher", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.weight(1f))
+            Text("Lower", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}

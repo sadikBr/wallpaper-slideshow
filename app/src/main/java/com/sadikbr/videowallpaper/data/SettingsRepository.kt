@@ -40,6 +40,8 @@ class SettingsRepository(context: Context) {
                     ?.let { name -> TransitionStyle.entries.firstOrNull { it.name == name } }
                     ?: TransitionStyle.CROSSFADE,
                 transitionMs = prefs[Keys.TRANSITION_MS] ?: WallpaperSettings.DEFAULT_TRANSITION_MS,
+                clock = readClock(prefs),
+                clockOffsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]),
             )
         }
         .distinctUntilChanged()
@@ -66,6 +68,50 @@ class SettingsRepository(context: Context) {
 
     suspend fun setTransitionMs(value: Int) = dataStore.edit { it[Keys.TRANSITION_MS] = value }
 
+    suspend fun updateClock(transform: (ClockSettings) -> ClockSettings) = dataStore.edit { prefs ->
+        val updated = transform(readClock(prefs))
+        prefs[Keys.CLOCK_ENABLED] = updated.enabled
+        prefs[Keys.CLOCK_COLOR] = updated.color
+        prefs[Keys.CLOCK_SIZE] = updated.size.name
+        prefs[Keys.CLOCK_WEIGHT] = updated.weight.name
+        prefs[Keys.CLOCK_FORMAT] = updated.timeFormat.name
+        prefs[Keys.CLOCK_SHOW_DATE] = updated.showDate
+        prefs[Keys.CLOCK_POSITION] = updated.position
+    }
+
+    /** Sets (or with 0, clears) how far the clock is moved for one photo. */
+    suspend fun setClockOffset(uri: String, offset: Float) = dataStore.edit { prefs ->
+        val offsets = decodeOffsets(prefs[Keys.CLOCK_OFFSETS]).toMutableMap()
+        if (offset == 0f) offsets.remove(uri) else offsets[uri] = offset
+        prefs[Keys.CLOCK_OFFSETS] = encodeOffsets(offsets)
+    }
+
+    suspend fun removeClockOffset(uri: String) = setClockOffset(uri, 0f)
+
+    private fun readClock(prefs: Preferences) = ClockSettings(
+        enabled = prefs[Keys.CLOCK_ENABLED] ?: false,
+        color = prefs[Keys.CLOCK_COLOR] ?: ClockSettings.COLORS.first(),
+        size = enumOrDefault(prefs[Keys.CLOCK_SIZE], ClockSize.LARGE),
+        weight = enumOrDefault(prefs[Keys.CLOCK_WEIGHT], ClockWeight.REGULAR),
+        timeFormat = enumOrDefault(prefs[Keys.CLOCK_FORMAT], TimeFormat.SYSTEM),
+        showDate = prefs[Keys.CLOCK_SHOW_DATE] ?: true,
+        position = prefs[Keys.CLOCK_POSITION] ?: ClockSettings.DEFAULT_POSITION,
+    )
+
+    private inline fun <reified T : Enum<T>> enumOrDefault(name: String?, default: T): T =
+        name?.let { value -> enumValues<T>().firstOrNull { it.name == value } } ?: default
+
+    private fun decodeOffsets(encoded: String?): Map<String, Float> = encoded.orEmpty()
+        .split(SEPARATOR)
+        .mapNotNull { line ->
+            val tab = line.lastIndexOf('\t')
+            if (tab <= 0) null else line.substring(tab + 1).toFloatOrNull()?.let { line.substring(0, tab) to it }
+        }
+        .toMap()
+
+    private fun encodeOffsets(offsets: Map<String, Float>): String =
+        offsets.entries.joinToString(SEPARATOR) { (uri, offset) -> "$uri\t$offset" }
+
     private object Keys {
         // Holds photos too; the key name is kept so existing lists survive the update.
         val MEDIA = stringPreferencesKey("videos")
@@ -77,6 +123,14 @@ class SettingsRepository(context: Context) {
         val SPEED = floatPreferencesKey("speed")
         val TRANSITION = stringPreferencesKey("transition")
         val TRANSITION_MS = intPreferencesKey("transition_ms")
+        val CLOCK_ENABLED = booleanPreferencesKey("clock_enabled")
+        val CLOCK_COLOR = intPreferencesKey("clock_color")
+        val CLOCK_SIZE = stringPreferencesKey("clock_size")
+        val CLOCK_WEIGHT = stringPreferencesKey("clock_weight")
+        val CLOCK_FORMAT = stringPreferencesKey("clock_format")
+        val CLOCK_SHOW_DATE = booleanPreferencesKey("clock_show_date")
+        val CLOCK_POSITION = floatPreferencesKey("clock_position")
+        val CLOCK_OFFSETS = stringPreferencesKey("clock_offsets")
     }
 
     private companion object {
